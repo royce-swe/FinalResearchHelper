@@ -1,0 +1,301 @@
+import React, { useState, useEffect } from 'react';
+
+interface Paper {
+  title: string;
+  year: number;
+  journal: string;
+  citations: number;
+  abstract: string;
+}
+
+interface Professor {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  university: string;
+  researchAreas: string[];
+  biography: string;
+  recentPapers: Paper[];
+  profileImage?: string;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ProfessorDetailPageProps {
+  professorId: string;
+  onBack: () => void;
+}
+
+const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, onBack }) => {
+  const [professor, setProfessor] = useState<Professor | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      content: 'Hi! I\'m here to help you write a personalized email to this professor. I\'ll use their research background and recent papers to help you craft a compelling message. What specific research interests or questions do you have?'
+    }
+  ]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [generatedEmail, setGeneratedEmail] = useState('');
+
+  useEffect(() => {
+    if (!professorId) return;
+  
+    // Extract just the OpenAlex ID from full URL if needed
+    const id = professorId.includes('/')
+      ? professorId.split('/').pop()
+      : professorId;
+  
+    const fetchProfessorDetails = async () => {
+      try {
+        const response = await fetch(`http://localhost:5050/professors/${id}`);
+        if (!response.ok) throw new Error('Failed to fetch professor details');
+        const data = await response.json();
+        setProfessor(data);
+      } catch (error) {
+        console.error(error);
+        setProfessor(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    setIsLoading(true);
+    fetchProfessorDetails();
+  }, [professorId]);
+  
+
+  const handleSendMessage = async () => {
+    if (!currentMessage.trim()) return;
+
+    const userMessage: ChatMessage = { role: 'user', content: currentMessage };
+    setChatMessages(prev => [...prev, userMessage]);
+    setCurrentMessage('');
+    setIsChatLoading(true);
+
+    setTimeout(() => {
+      const assistantMessage: ChatMessage = {
+        role: 'assistant',
+        content: `That's a great research interest! Based on ${professor?.name}'s recent work, I can help you craft an email that connects your interests to their research. Would you like me to generate a draft email now?`
+      };
+      setChatMessages(prev => [...prev, assistantMessage]);
+      setIsChatLoading(false);
+    }, 1500);
+  };
+
+  const generateEmail = () => {
+    const mockEmail = `Subject: Research Opportunity - Interest in ${professor?.researchAreas[0] || 'Your Research'}
+
+Dear ${professor?.name},
+
+I hope this email finds you well. My name is [Your Name], and I am a [Your Year/Status] student at [Your University] studying [Your Major]. I am writing to express my strong interest in your research on ${professor?.researchAreas.join(', ')}.
+
+I recently read one of your papers and was particularly fascinated by your work. I would love the opportunity to contribute to your research group. I have experience in [relevant skills/experience], and I believe I could make meaningful contributions to your ongoing projects.
+
+Would you be available for a brief meeting to discuss potential research opportunities? I would be happy to share my CV and discuss how my background might complement your current research initiatives.
+
+Thank you for your time and consideration. I look forward to hearing from you.
+
+Best regards,
+[Your Name]
+[Your Contact Information]`;
+
+    setGeneratedEmail(mockEmail);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pt-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-xl text-gray-600">Loading professor information...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!professor) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pt-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+          <div className="text-center">
+            <p className="text-xl text-gray-600">Professor not found</p>
+            <button 
+              onClick={onBack}
+              className="mt-4 btn-primary"
+            >
+              Back to Faculty Finder
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pt-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <button 
+          onClick={onBack}
+          className="mb-6 flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+        >
+          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Faculty Finder
+        </button>
+
+        <div className="grid lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="glass rounded-3xl shadow-2xl p-8">
+              <div className="flex items-start space-x-6">
+                <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-3xl font-bold">
+                  {professor.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                <div className="flex-1">
+                  <h1 className="text-4xl font-bold text-gray-900 mb-2">{professor.name}</h1>
+                  <p className="text-xl text-gray-600 mb-2">{professor.department || 'Department info unavailable'}</p>
+                  <p className="text-lg text-gray-500 mb-4">{professor.university}</p>
+                  {professor.email !== 'Not Available' && (
+                    <a 
+                      href={`mailto:${professor.email}`}
+                      className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      {professor.email}
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Research Areas</h2>
+              <div className="flex flex-wrap gap-3">
+                {professor.researchAreas.map((area, index) => (
+                  <span key={index} className="px-4 py-2 bg-blue-100 text-blue-800 rounded-full font-medium">
+                    {area}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Biography</h2>
+              <p className="text-gray-700 leading-relaxed">{professor.biography || 'Biography not available.'}</p>
+            </div>
+
+            <div className="glass rounded-2xl shadow-lg p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Publications</h2>
+              <div className="space-y-6">
+                {professor.recentPapers.map((paper, index) => (
+                  <div key={index} className="border-l-4 border-blue-500 pl-6 hover:bg-gray-50 rounded-r-lg p-4 transition-colors">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{paper.title}</h3>
+                    <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
+                      <span>{paper.journal}</span>
+                      <span>•</span>
+                      <span>{paper.year}</span>
+                      <span>•</span>
+                      <span>{paper.citations} citations</span>
+                    </div>
+                    <p className="text-gray-700 text-sm">{paper.abstract}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-1">
+            <div className="glass rounded-2xl shadow-lg p-6 sticky top-24">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center">
+                <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Email Assistant
+              </h2>
+
+              <div className="h-64 overflow-y-auto mb-4 space-y-3">
+                {chatMessages.map((message, index) => (
+                  <div 
+                    key={index}
+                    className={`p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-600 text-white ml-4' : 'bg-gray-100 text-gray-800 mr-4'}`}
+                  >
+                    <p className="text-sm">{message.content}</p>
+                  </div>
+                ))}
+                {isChatLoading && (
+                  <div className="bg-gray-100 text-gray-800 mr-4 p-3 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <div className="animate-bounce w-2 h-2 bg-gray-500 rounded-full"></div>
+                      <div className="animate-bounce w-2 h-2 bg-gray-500 rounded-full" style={{animationDelay: '0.1s'}}></div>
+                      <div className="animate-bounce w-2 h-2 bg-gray-500 rounded-full" style={{animationDelay: '0.2s'}}></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex space-x-2 mb-4">
+                <input
+                  type="text"
+                  value={currentMessage}
+                  onChange={(e) => setCurrentMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Tell me about your research interests..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!currentMessage.trim() || isChatLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+
+              <button
+                onClick={generateEmail}
+                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors mb-4"
+              >
+                Generate Email Draft
+              </button>
+
+              {generatedEmail && (
+                <div className="mt-4">
+                  <h3 className="font-semibold text-gray-900 mb-2">Generated Email:</h3>
+                  <div className="bg-white border border-gray-300 rounded-lg p-4 max-h-64 overflow-y-auto">
+                    <pre className="whitespace-pre-wrap text-sm text-gray-800">{generatedEmail}</pre>
+                  </div>
+                  <div className="flex space-x-2 mt-3">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(generatedEmail)}
+                      className="flex-1 bg-blue-100 text-blue-700 py-2 px-4 rounded-lg font-medium hover:bg-blue-200 transition-colors"
+                    >
+                      Copy Email
+                    </button>
+                    <a
+                      href={`mailto:${professor.email}?subject=${encodeURIComponent(generatedEmail.match(/Subject: (.+)/)?.[1] || 'Research Opportunity')}&body=${encodeURIComponent(generatedEmail.split('\n').slice(2).join('\n'))}`}
+                      className="flex-1 bg-green-100 text-green-700 py-2 px-4 rounded-lg font-medium hover:bg-green-200 transition-colors text-center"
+                    >
+                      Send Email
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProfessorDetailPage;

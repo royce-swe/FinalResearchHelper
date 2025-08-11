@@ -1,0 +1,172 @@
+from pathlib import Path
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pandas as pd
+import time
+from rapidfuzz import fuzz
+from pyalex import Institutions, Authors, Works, config
+
+app = Flask(__name__)
+app.url_map.strict_slashes = False
+CORS(app)
+
+# -------- CONFIGURATION --------
+config.email = "jalenmathis7@gmail.com"
+FUZZY_MATCH_THRESHOLD = 70  # Match sensitivity for research areas
+
+# ---------- Load CSVs once at startup ----------
+BASE = Path(__file__).resolve().parent
+data = {
+    'georgia tech': pd.read_csv(BASE / "faculty" / "gt_faculty.csv"),
+    'stanford':     pd.read_csv(BASE / "faculty" / "stanford_faculty.csv"),
+    'uiuc':         pd.read_csv(BASE / "faculty" / "uiuc_faculty.csv"),
+    'purdue':       pd.read_csv(BASE / "faculty" / "purdue_faculty.csv"),
+}
+
+for key in data:
+    data[key].columns = [col.lower() for col in data[key].columns]
+# ------------------------------------------------
+
+
+@app.route("/get-emails/",  methods=["POST", "OPTIONS"])
+@app.route("/get-emails", methods=["POST", "OPTIONS"])
+def get_emails():
+    if request.method == "OPTIONS":
+        return '', 200
+    payload = request.get_json(silent=True) or {}
+    user_input = payload.get("school", "").lower()
+
+    if "georgia" in user_input or "tech" in user_input:
+        df = data["georgia tech"]
+    elif "stanford" in user_input:
+        df = data["stanford"]
+    elif "illinois" in user_input or "uiuc" in user_input:
+        df = data["uiuc"]
+    elif "purdue" in user_input:
+        df = data["purdue"]
+    else:
+        return jsonify({"error": "School not found"}), 404
+
+    if "email" not in df.columns:
+        return jsonify({"error": "CSV missing 'email' column"}), 500
+
+    emails = df["email"].head(3).dropna().tolist()
+    return jsonify({"emails": emails})
+
+
+# ---------------- NEW ENDPOINT: find professors dynamically ----------------
+
+def fetch_recent_papers(author_id, max_papers=5):
+    papers = []
+    try:
+        works_iter = Works().filter(
+            **{"authorships.author.id": author_id}
+        ).sort(publication_year="desc")
+        works_iter = works_iter.select(
+            ["title", "publication_year", "primary_location", "cited_by_count", "abstract_inverted_index"]
+        ).paginate(per_page=20)
+
+        for page in works_iter:
+            for work in page:
+                if not work:
+                    continue  # Skip empty entries
+
+                if len(papers) >= max_papers:
+                    return papers
+
+                title = work.get("title", "Untitled")
+                year = work.get("publication_year", "N/A")
+
+                primary_location = work.get("primary_location") or {}
+                source = (primary_location or {}).get("source") or {}
+                journal = source.get("display_name", "Unknown Journal")
+
+                citations = work.get("cited_by_count", 0)
+
+                abstract_data = work.get("abstract_inverted_index") or {}
+                if abstract_data and isinstance(abstract_data, dict):
+                    abstract = " ".join(
+                        word for word, positions in sorted(
+                            ((k, v) for k, v in abstract_data.items()),
+                            key=lambda x: min(x[1])
+                        )
+                    )
+                else:
+                    abstract = "No abstract available."
+
+                papers.append({
+                    "title": title,
+                    "year": year,
+                    "journal": journal,
+                    "citations": citations,
+                    "abstract": abstract
+                })
+            time.sleep(0.3)
+    except Exception as e:
+        print(f"Error fetching papers for {author_id}: {e}")
+    return papers
+
+
+@app.route("/find-professors", methods=["POST"])
+def find_professors():
+    payload = request.get_json(silent=True) or {}
+    university = payload.get("university", "")
+    interests = payload.get("interests", [])
+
+    if not university:
+        return jsonify({"error": "University is required"}), 400
+
+    try:
+        insts = list(Institutions().search(university).get())
+        if not insts:
+            return jsonify({"professors": []})
+        inst_id = insts[0]['id']
+
+        authors_iter = (
+            Authors()
+            .filter(**{"last_known_institutions.id": inst_id, "works_count": ">10"})
+            .select(["id", "display_name", "x_concepts", "last_known_institutions", "works_count"])
+            .paginate(per_page=50)
+        )
+
+        professors = []
+        MAX_PROFESSORS = 50  # <-- limit here
+
+        for page in authors_iter:
+            for author in page:
+                if len(professors) >= MAX_PROFESSORS:
+                    break  # stop collecting once we reach the limit
+
+                topics = [concept["display_name"] for concept in author.get("x_concepts", [])]
+                if not topics:
+                    continue
+
+                # Fuzzy match against interests
+                if any(fuzz.partial_ratio(interest.lower(), topic.lower()) >= FUZZY_MATCH_THRESHOLD
+                       for interest in interests for topic in topics):
+                    recent_papers = fetch_recent_papers(author["id"])
+                    professors.append({
+                        "id": author["id"],
+                        "name": author.get("display_name", "Unknown"),
+                        "email": "Not Available",  # OpenAlex doesn't provide emails
+                        "research_area": ", ".join(topics),
+                        "recent_papers": recent_papers
+                    })
+
+            if len(professors) >= MAX_PROFESSORS:
+                break  # break outer loop as well
+
+        return jsonify({"professors": professors})
+    except Exception as e:
+        print(f"Error fetching professors: {e}")
+        return jsonify({"error": "Failed to fetch professor data"}), 500
+
+@app.route("/", methods=["GET"])
+def root():
+    return "Backend is alive!"
+
+
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5050))
+    app.run(debug=True, host="0.0.0.0", port=port, use_reloader=False)
