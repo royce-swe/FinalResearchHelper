@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Navigation from './components/Navigation';
 import HomePage from './components/HomePage';
 import FacultyFinder from './components/FacultyFinder';
