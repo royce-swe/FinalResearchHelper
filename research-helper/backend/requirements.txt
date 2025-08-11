@@ -1,5 +1,9 @@
-flask
-flask-Cors
-pandas
-gunicorn
-rapidfuzz
+Flask==2.3.2
+flask-cors==4.0.0
+pandas==2.0.3
+rapidfuzz==3.6.1
+pyalex==1.7.0
+requests==2.31.0
+beautifulsoup4==4.12.2
+ddgs==0.7.6
+openai==0.28.0
