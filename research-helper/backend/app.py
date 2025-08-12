@@ -30,7 +30,7 @@ import uuid, hashlib  # NEW for metrics
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 # Enable credentialed requests so the visit cookie works
-CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:5173"}})
+CORS(app, supports_credentials=True)
 
 # AI -----------------------
 # USE THE API key on ur local environment to run the email generator

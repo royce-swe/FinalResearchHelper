@@ -8,7 +8,7 @@ import ProfessorDetailPage from './components/ProfessorDetailPage';
 import Footer from './components/Footer';
 import { PageType } from './types';
 
-const API_BASE = 'http://localhost:5173';
+const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
