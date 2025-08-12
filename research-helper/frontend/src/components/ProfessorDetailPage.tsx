@@ -35,7 +35,7 @@ const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, 
   const [studentSkills, setStudentSkills] = useState('');
   const [generatedEmail, setGeneratedEmail] = useState('');
 
-  const API_BASE = 'http://localhost:5050';
+  const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
 
   function handleBack() {
     onBack();

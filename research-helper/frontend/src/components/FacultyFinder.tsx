@@ -16,7 +16,7 @@ interface FacultyFinderProps {
   onProfessorSelect: (professorId: string) => void;
 }
 
-const API_BASE = "http://127.0.0.1:5050";
+const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
 
 const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
   // Options
