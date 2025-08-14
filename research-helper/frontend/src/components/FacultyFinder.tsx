@@ -97,7 +97,7 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
       return list;
     } catch (error) {
       console.error("Fetch failed:", error);
-      setErrorMessage("Could not fetch professor data. Please try again.");
+      setErrorMessage("Could not fetch professor data. Please try again. (The server is likely updating, please try again later!)");
       return null;
     }
   };
@@ -214,6 +214,12 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                   "Search →"
                 )}
               </button>
+              {/* Large centered spinner */}
+              {isLoading && (
+                <div className="flex justify-center items-center mt-8">
+                  <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                </div>
+              )}
             </div>
           )}
 
