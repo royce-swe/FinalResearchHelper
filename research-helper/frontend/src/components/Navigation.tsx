@@ -1,19 +1,17 @@
 import React from 'react';
-import { PageType } from '../types';
+import { useNavigate, useLocation } from 'react-router-dom';
 // Import your logo image
-import logoImage from '../assets/images/logo.jpg'; // Add your logo file here
+import logoImage from '../assets/images/logo.jpg';
 
-interface NavigationProps {
-  currentPage: PageType;
-  setCurrentPage: (page: PageType) => void;
-}
+const Navigation: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
 
-const Navigation: React.FC<NavigationProps> = ({ currentPage, setCurrentPage }) => {
-  const navItems: { page: PageType; label: string }[] = [
-    { page: 'home', label: 'Home' },
-    { page: 'finder', label: 'Faculty Finder' },
-    { page: 'about', label: 'About' },
-    { page: 'contact', label: 'Contact' },
+  const navItems: { path: string; label: string }[] = [
+    { path: '/', label: 'Home' },
+    { path: '/finder', label: 'Faculty Finder' },
+    { path: '/about', label: 'About' },
+    { path: '/contact', label: 'Contact' },
   ];
 
   return (
@@ -22,10 +20,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, setCurrentPage }) 
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
             <button
-              onClick={() => setCurrentPage('home')}
+              onClick={() => navigate('/')}
               className="hover:scale-105 transition-transform duration-200"
             >
-              {/* Rectangular Logo Image */}
               <img 
                 src={logoImage} 
                 alt="ResearchConnect Logo" 
@@ -33,15 +30,15 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, setCurrentPage }) 
               />
             </button>
           </div>
-          
+
           <div className="hidden md:block">
             <div className="ml-10 flex items-baseline space-x-8">
-              {navItems.map(({ page, label }) => (
+              {navItems.map(({ path, label }) => (
                 <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
+                  key={path}
+                  onClick={() => navigate(path)}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    currentPage === page
+                    location.pathname === path
                       ? 'text-blue-600 bg-blue-50'
                       : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
                   }`}
@@ -51,7 +48,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, setCurrentPage }) 
               ))}
             </div>
           </div>
-          
+
           <div className="md:hidden">
             <button className="text-gray-700 hover:text-blue-600 transition-colors">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

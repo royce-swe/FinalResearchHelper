@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { PageType, Feature } from '../types';
-
-interface HomePageProps {
-  setCurrentPage: (page: PageType) => void;
-}
+import { useNavigate } from 'react-router-dom';
+import { Feature } from '../types';
 
 const words = [
   'Assistant.',
@@ -32,7 +29,8 @@ const features: Feature[] = [
   }
 ];
 
-const HomePage: React.FC<HomePageProps> = ({ setCurrentPage }) => {
+const HomePage: React.FC = () => {
+  const navigate = useNavigate();
   const [displayedText, setDisplayedText] = useState('');
   const [wordIndex, setWordIndex] = useState(0);
   const [charIndex, setCharIndex] = useState(0);
@@ -84,13 +82,13 @@ const HomePage: React.FC<HomePageProps> = ({ setCurrentPage }) => {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
-                onClick={() => setCurrentPage('finder')}
+                onClick={() => navigate('/finder')}
                 className="btn-primary text-lg px-8 py-4 rounded-full"
               >
                 Find Faculty →
               </button>
               <button
-                onClick={() => setCurrentPage('about')}
+                onClick={() => navigate('/about')}
                 className="btn-secondary text-lg px-8 py-4 rounded-full"
               >
                 Learn More
@@ -109,7 +107,10 @@ const HomePage: React.FC<HomePageProps> = ({ setCurrentPage }) => {
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {features.map((feature, index) => (
-              <div key={index} className="glass p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 animate-slide-up">
+              <div
+                key={index}
+                className="glass p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 animate-slide-up"
+              >
                 <div className="text-4xl mb-4 text-center">{feature.icon}</div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-4 text-center">{feature.title}</h3>
                 <p className="text-gray-600 text-center">{feature.description}</p>

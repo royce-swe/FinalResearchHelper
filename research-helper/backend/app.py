@@ -29,8 +29,12 @@ import uuid, hashlib  # NEW for metrics
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
-# Enable credentialed requests so the visit cookie works
-CORS(app, supports_credentials=True)
+
+# Allow both localhost (dev) and your production site
+CORS(app, 
+     origins=["http://localhost:5173", "https://researchconnectai.com"],
+     supports_credentials=True,
+     resources={r"/*": {"origins": ["http://localhost:5173", "https://researchconnectai.com"]}})
 
 # AI -----------------------
 # USE THE API key on ur local environment to run the email generator
@@ -538,72 +542,72 @@ def scrape_page(url, depth=0, visited=None, prefer_domain: str | None = None):
 # Email Lookup & Caching
 # =========================================================
 
-def find_email_online(professor_name: str, university_name: str) -> str:
-    """
-    Try multiple DuckDuckGo queries. Uses a persistent cache (email_cache.json)
-    and prefers emails on the university's .edu domain when possible.
-    """
-    # Normalize university for both cache key and query
-    norm_uni = _normalize_uni(university_name)
-    key_str = str((professor_name.lower().strip(), norm_uni.lower().strip()))
+# def find_email_online(professor_name: str, university_name: str) -> str:
+#     """
+#     Try multiple DuckDuckGo queries. Uses a persistent cache (email_cache.json)
+#     and prefers emails on the university's .edu domain when possible.
+#     """
+#     # Normalize university for both cache key and query
+#     norm_uni = _normalize_uni(university_name)
+#     key_str = str((professor_name.lower().strip(), norm_uni.lower().strip()))
 
-    # 1) Cache hit?
-    cached = EMAIL_CACHE.get(key_str)
-    if cached:
-        return cached
+#     # 1) Cache hit?
+#     cached = EMAIL_CACHE.get(key_str)
+#     if cached:
+#         return cached
 
-    # 2) Build queries with normalized uni
-    queries = [
-        f'"{professor_name}" "{norm_uni}" site:.edu email',
-        f'"{professor_name}" "{norm_uni}" faculty site:.edu contact',
-        f'"{professor_name}" "{norm_uni}" professor site:.edu',
-    ]
+#     # 2) Build queries with normalized uni
+#     queries = [
+#         f'"{professor_name}" "{norm_uni}" site:.edu email',
+#         f'"{professor_name}" "{norm_uni}" faculty site:.edu contact',
+#         f'"{professor_name}" "{norm_uni}" professor site:.edu',
+#     ]
 
-    # 3) Prefer domain heuristic (very light)
-    prefer_domain = None
-    tokens = re.findall(r"[A-Za-z]+", norm_uni.lower())
-    if "stanford" in tokens:
-        prefer_domain = "stanford.edu"
-    elif "caltech" in tokens:
-        prefer_domain = "caltech.edu"
-    elif "florida" in tokens and "atlantic" in tokens:
-        prefer_domain = "fau.edu"
-    elif "florida" in tokens and "state" in tokens:
-        prefer_domain = "fsu.edu"
-    elif "central" in tokens and "florida" in tokens:
-        prefer_domain = "ucf.edu"
-    elif "wisconsin" in tokens and ("madison" in tokens or "–madison" in norm_uni.lower()):
-        prefer_domain = "wisc.edu"
+#     # 3) Prefer domain heuristic (very light)
+#     prefer_domain = None
+#     tokens = re.findall(r"[A-Za-z]+", norm_uni.lower())
+#     if "stanford" in tokens:
+#         prefer_domain = "stanford.edu"
+#     elif "caltech" in tokens:
+#         prefer_domain = "caltech.edu"
+#     elif "florida" in tokens and "atlantic" in tokens:
+#         prefer_domain = "fau.edu"
+#     elif "florida" in tokens and "state" in tokens:
+#         prefer_domain = "fsu.edu"
+#     elif "central" in tokens and "florida" in tokens:
+#         prefer_domain = "ucf.edu"
+#     elif "wisconsin" in tokens and ("madison" in tokens or "–madison" in norm_uni.lower()):
+#         prefer_domain = "wisc.edu"
 
-    # 4) Search & scrape
-    for query in queries:
-        print(f'\n🔎 [DEBUG] Starting search for query: {query}')
-        links = search_duckduckgo(query)
+#     # 4) Search & scrape
+#     for query in queries:
+#         print(f'\n🔎 [DEBUG] Starting search for query: {query}')
+#         links = search_duckduckgo(query)
 
-        for link in links:
-            print(f"   → [DEBUG] Checking: {link}")
-            emails = scrape_page(link, prefer_domain=prefer_domain)
-            valid_emails = [
-                e for e in emails
-                if not any(x in e.lower() for x in ["example", "support", "noreply"])
-            ]
-            if valid_emails:
-                best = valid_emails[0]
-                with EMAIL_CACHE_LOCK:
-                    EMAIL_CACHE[key_str] = best
-                _save_email_cache()
-                print(f"✅ [DEBUG] Found valid email: {best}")
-                return best
-            else:
-                print("      ⚠️ [DEBUG] No valid emails found on this page.")
-            time.sleep(1)
+#         for link in links:
+#             print(f"   → [DEBUG] Checking: {link}")
+#             emails = scrape_page(link, prefer_domain=prefer_domain)
+#             valid_emails = [
+#                 e for e in emails
+#                 if not any(x in e.lower() for x in ["example", "support", "noreply"])
+#             ]
+#             if valid_emails:
+#                 best = valid_emails[0]
+#                 with EMAIL_CACHE_LOCK:
+#                     EMAIL_CACHE[key_str] = best
+#                 _save_email_cache()
+#                 print(f"✅ [DEBUG] Found valid email: {best}")
+#                 return best
+#             else:
+#                 print("      ⚠️ [DEBUG] No valid emails found on this page.")
+#             time.sleep(1)
 
-    # 5) Nothing found — remember failure to avoid repeated scraping
-    print("❌ [DEBUG] No email found after all queries.")
-    with EMAIL_CACHE_LOCK:
-        EMAIL_CACHE[key_str] = "Not Available"
-    _save_email_cache()
-    return "Not Available"
+#     # 5) Nothing found — remember failure to avoid repeated scraping
+#     print("❌ [DEBUG] No email found after all queries.")
+#     with EMAIL_CACHE_LOCK:
+#         EMAIL_CACHE[key_str] = "Not Available"
+#     _save_email_cache()
+#     return "Not Available"
 
 # ---------------------------------------------
 
@@ -718,9 +722,7 @@ def get_professor_details(prof_id):
             csv_research = str(match_row.get(research_col, "")).strip() if research_col else ""
 
             # email (validate + fallback)
-            email = is_valid_email_text(raw_email)
-            if not email:
-                email = find_email_online(name, uni)
+            email = is_valid_email_text(raw_email) or "Not Available"
 
             # Enrich from OpenAlex if we can resolve an ID
             oa_id = get_openalex_id_for_prof(name, uni)  # cached helper
@@ -782,7 +784,7 @@ def get_professor_details(prof_id):
         professor_info = {
             "id": prof_id,
             "name": name,
-            "email": find_email_online(name, university) if university != "Unknown Institution" else "Not Available",
+            "email": "Not Available",
             "university": university,
             "department": "Unknown Department",
             "researchAreas": topics,
@@ -924,8 +926,8 @@ def find_professors():
 
         # Accept only clearly valid emails from CSV
         email = is_valid_email_text(raw_email)
-        if not email:
-            email = find_email_online(name, uni)
+        # if not email:
+        #     email = find_email_online(name, uni)
         
         if email and email != "Not Available":
             remember_email(name, uni, email)
@@ -1057,6 +1059,110 @@ def get_metrics():
             "faculty_contacts": fc,
         }
     return jsonify(payload)
+
+# =========================================================
+# NEW ENDPOINT: Professors by School + Field
+# =========================================================
+
+@app.route("/gptprofessorsearch", methods=["POST"])
+def search_professors():
+    """
+    Request JSON:
+    {
+      "school": "Stanford University",
+      "field": "Artificial Intelligence"
+    }
+    Returns JSON with professors, enriched with OpenAlex info and stable IDs.
+    """
+    try:
+        data = request.get_json()
+        school = data.get("school", "").strip()
+        field = data.get("field", "").strip()
+
+        if not school or not field:
+            return jsonify({"error": "Missing 'school' or 'field'"}), 400
+
+        # Step 1: Ask GPT to suggest professors
+        gpt_prompt = f"""
+        Provide a JSON array of up to 15 professors at {school} who specialize in {field}.
+        Each object must have: name, department, and (if available) email.
+        If email is unknown, use "Not Available".
+        Return valid JSON only.
+        """
+
+        gpt_response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": "You return only clean JSON, no commentary."},
+                {"role": "user", "content": gpt_prompt},
+            ],
+            max_tokens=800,
+            temperature=0.3
+        )
+
+        raw_text = gpt_response.choices[0].message.content.strip()
+
+        # Step 2: Parse GPT JSON safely
+        try:
+            prof_list = json.loads(raw_text)
+        except Exception:
+            # fallback: parse lines but filter invalid entries
+            prof_list = []
+            for line in raw_text.split("\n"):
+                line = line.strip()
+                if line and not line.startswith(("N/A", "•", "Quick Email", "Learn More")):
+                    prof_list.append({"name": line, "department": field, "email": "Not Available"})
+
+        enriched_professors = []
+
+        for prof in prof_list:
+            name = prof.get("name", "").strip()
+            dept = prof.get("department", "").strip()
+            email = is_valid_email_text(prof.get("email", "")) or "Email Not Available"
+
+            # Step 3: Try to get OpenAlex ID
+            oa_id = get_openalex_id_for_prof(name, school)
+            if oa_id and not oa_id.startswith("http"):
+                oa_id = f"https://openalex.org/{oa_id}"
+
+            # Step 4: Generate stable fallback ID if OpenAlex fails
+            prof_id = oa_id or f"{name.lower().replace(' ', '-')}-{school.lower().replace(' ', '-')}"
+
+            research_areas, recent_papers, biography = [], [], ""
+
+            if oa_id:
+                try:
+                    author = Authors()[oa_id]
+                    if author:
+                        xconcepts = author.get("x_concepts") or []
+                        research_areas = [c.get("display_name") for c in xconcepts if c.get("display_name")]
+                        recent_papers = fetch_recent_papers(oa_id, max_papers=5)
+                        biography = author.get("biography") or ""
+                except Exception as e:
+                    print(f"[WARN] Could not fetch OpenAlex info for {name}: {e}")
+
+            enriched_professors.append({
+                "id": prof_id,
+                "name": name,
+                "department": dept,
+                "email": email or "Not Available",
+                "university": school,
+                "researchAreas": research_areas,
+                "recentPapers": recent_papers,
+                "biography": biography
+            })
+
+        # Step 5: Filter out malformed entries
+        enriched_professors = [
+            p for p in enriched_professors if p.get("name") and p.get("department")
+        ]
+
+        return jsonify({"professors": enriched_professors}), 200
+
+    except Exception as e:
+        print(f"[ERROR] /gptprofessorsearch failed: {e}")
+        return jsonify({"error": "Failed to fetch professors"}), 500
+
 
 # -------------------------------
 

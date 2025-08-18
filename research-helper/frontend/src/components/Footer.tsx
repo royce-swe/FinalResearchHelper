@@ -1,11 +1,7 @@
 import React from 'react';
-import { PageType } from '../types';
+import { Link } from 'react-router-dom';
 
-interface FooterProps {
-  setCurrentPage: (page: PageType) => void;
-}
-
-const Footer: React.FC<FooterProps> = ({ setCurrentPage }) => {
+const Footer: React.FC = () => {
   return (
     <footer className="bg-gray-900 text-white py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -22,12 +18,12 @@ const Footer: React.FC<FooterProps> = ({ setCurrentPage }) => {
           <div>
             <h3 className="font-semibold text-lg mb-4">Product</h3>
             <div className="space-y-2">
-              <button 
-                onClick={() => setCurrentPage('finder')} 
+              <Link 
+                to="/finder" 
                 className="block text-gray-400 hover:text-white transition-colors"
               >
                 Faculty Finder
-              </button>
+              </Link>
               <a href="#" className="block text-gray-400 hover:text-white transition-colors">
                 Research Database
               </a>
@@ -40,18 +36,18 @@ const Footer: React.FC<FooterProps> = ({ setCurrentPage }) => {
           <div>
             <h3 className="font-semibold text-lg mb-4">Company</h3>
             <div className="space-y-2">
-              <button 
-                onClick={() => setCurrentPage('about')} 
+              <Link 
+                to="/about" 
                 className="block text-gray-400 hover:text-white transition-colors"
               >
                 About Us
-              </button>
-              <button 
-                onClick={() => setCurrentPage('contact')} 
+              </Link>
+              <Link 
+                to="/contact" 
                 className="block text-gray-400 hover:text-white transition-colors"
               >
                 Contact
-              </button>
+              </Link>
               <a href="#" className="block text-gray-400 hover:text-white transition-colors">
                 Careers
               </a>

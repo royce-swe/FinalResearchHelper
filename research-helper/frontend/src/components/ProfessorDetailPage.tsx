@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation } from "react-router-dom";
 
 interface Paper {
   title: string;
@@ -20,60 +22,70 @@ interface Professor {
   profileImage?: string;
 }
 
-interface ProfessorDetailPageProps {
-  professorId: string;
-  onBack: () => void;
-}
+const ProfessorDetailPage: React.FC = () => {
+  const { id: professorId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, onBack }) => {
-  const [professor, setProfessor] = useState<Professor | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const passedProfessor = (location.state as { professor?: Professor })?.professor;
 
-  // Personalized email inputs
+  const [professor, setProfessor] = useState<Professor | null>(passedProfessor || null);
+  const [isLoading, setIsLoading] = useState(!passedProfessor); // if we already have professor, skip loading
+  const queryParams = new URLSearchParams(location.search);
+  const email = queryParams.get("email"); // "leavens@ucf.edu"
+
   const [studentName, setStudentName] = useState('');
   const [studentInterests, setStudentInterests] = useState('');
   const [studentSkills, setStudentSkills] = useState('');
   const [generatedEmail, setGeneratedEmail] = useState('');
 
   const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+  //const API_BASE = "http://localhost:5050";
 
-  function handleBack() {
-    onBack();
+  const handleBack = () => navigate('/finder');
+
+  // Check if ID looks like an OpenAlex ID (starts with "A" and numbers)
+  const isValidProfessorId = professorId?.startsWith("A") && /^\w+$/.test(professorId);   
+  const searchParams = new URLSearchParams(location.search);
+  const emailFromQuery = searchParams.get("email") || "";
+
+useEffect(() => {
+  if (!professorId) {
+    setIsLoading(false);
+    return;
   }
 
-  useEffect(() => {
-    if (!professorId) return;
+  const controller = new AbortController();
+  const fetchProfessorDetails = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(`${API_BASE}/professors/${encodeURIComponent(professorId)}`, {
+        signal: controller.signal,
+      });
 
-    const id = professorId.includes('/') ? (professorId.split('/').pop() as string) : professorId;
+      if (!response.ok) throw new Error("Failed to fetch professor details");
 
-    const controller = new AbortController();
-    const fetchProfessorDetails = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch(`${API_BASE}/professors/${encodeURIComponent(id)}`, {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('Failed to fetch professor details');
-        const data = await response.json();
+      const data = await response.json();
+      data.researchAreas = Array.isArray(data.researchAreas) ? data.researchAreas : [];
+      data.recentPapers = Array.isArray(data.recentPapers) ? data.recentPapers : [];
 
-        // Normalize just in case the backend ever returns nulls
-        data.researchAreas = Array.isArray(data.researchAreas) ? data.researchAreas : [];
-        data.recentPapers = Array.isArray(data.recentPapers) ? data.recentPapers : [];
+      // Merge email from query param if provided
+      if (emailFromQuery) data.email = emailFromQuery;
 
-        setProfessor(data);
-      } catch (error) {
-        if ((error as any)?.name !== 'AbortError') {
-          console.error(error);
-          setProfessor(null);
-        }
-      } finally {
-        setIsLoading(false);
+      setProfessor(data);
+    } catch (error) {
+      if ((error as any)?.name !== "AbortError") {
+        console.error(error);
+        setProfessor(null);
       }
-    };
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    fetchProfessorDetails();
-    return () => controller.abort();
-  }, [professorId]);
+  fetchProfessorDetails();
+  return () => controller.abort();
+}, [professorId, emailFromQuery]);
 
   const generateEmail = async () => {
     if (!professor) return;
@@ -96,26 +108,34 @@ const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, 
       });
 
       const data = await response.json();
-
-      if (response.ok && data.draft) {
-        setGeneratedEmail(data.draft);
-      } else {
-        setGeneratedEmail("⚠️ Failed to generate draft email.");
-      }
+      setGeneratedEmail(response.ok && data.draft ? data.draft : "⚠️ Failed to generate draft email.");
     } catch (error) {
       console.error("Error generating email:", error);
       setGeneratedEmail("⚠️ Error connecting to AI email generator.");
     }
   };
 
+  // Show spinner if URL looks invalid
+  if (!isValidProfessorId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-lg text-gray-600">Professor information not available</p>
+          <button type="button" onClick={handleBack} className="mt-4 btn-primary">
+            Back to Faculty Finder
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pt-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-xl text-gray-600">Loading professor information...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-xl text-gray-600">Loading professor information...</p>
         </div>
       </div>
     );
@@ -123,14 +143,12 @@ const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, 
 
   if (!professor) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 pt-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="text-center">
-            <p className="text-xl text-gray-600">Professor not found</p>
-            <button type="button" onClick={handleBack} className="mt-4 btn-primary">
-              Back to Faculty Finder
-            </button>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50">
+        <div className="text-center">
+          <p className="text-xl text-gray-600">Professor not found</p>
+          <button type="button" onClick={handleBack} className="mt-4 btn-primary">
+            Back to Faculty Finder
+          </button>
         </div>
       </div>
     );
@@ -151,7 +169,7 @@ const ProfessorDetailPage: React.FC<ProfessorDetailPageProps> = ({ professorId, 
           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-        Back to Faculty Finder
+          Back to Faculty Finder
         </button>
 
         <div className="grid lg:grid-cols-3 gap-8">

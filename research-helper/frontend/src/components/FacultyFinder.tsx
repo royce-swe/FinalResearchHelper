@@ -1,10 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-
-type DepartmentOption = { name: string; slug: string };
-type UniversityOption = { name: string; slug: string; departments: DepartmentOption[] };
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface FacultyMember {
-  id: string; // kept for Learn More
+  id: string;
   name: string;
   email: string;
   title?: string;
@@ -12,81 +10,41 @@ interface FacultyMember {
   department: string;
 }
 
-interface FacultyFinderProps {
-  onProfessorSelect: (professorId: string) => void;
-}
+const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+//const API_BASE = "http://localhost:5050";
 
-const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+const FacultyFinder: React.FC = () => {
+  const navigate = useNavigate();
 
-const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
-  // Options
-  const [options, setOptions] = useState<UniversityOption[]>([]);
-  const [loadingOptions, setLoadingOptions] = useState(true);
-  const [optionsError, setOptionsError] = useState<string | null>(null);
-
-  // Selections
-  const [selectedUniSlug, setSelectedUniSlug] = useState("");
-  const [selectedDeptSlug, setSelectedDeptSlug] = useState("");
-
-  // Results/UI
+  const [fieldOfStudy, setFieldOfStudy] = useState("");
+  const [targetUniversity, setTargetUniversity] = useState("");
   const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>([]);
   const [displayCount, setDisplayCount] = useState(3);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Fetch dropdown options
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoadingOptions(true);
-        const res = await fetch(`${API_BASE}/options`);
-        if (!res.ok) throw new Error("Failed to load options");
-        const data = await res.json();
-        setOptions(data.universities || []);
-      } catch (e: any) {
-        setOptionsError(e.message || "Failed to load options");
-      } finally {
-        setLoadingOptions(false);
-      }
-    })();
-  }, []);
-
-  // Departments for selected uni
-  const departmentOptions: DepartmentOption[] = useMemo(() => {
-    const uni = options.find((u) => u.slug === selectedUniSlug);
-    return uni?.departments ?? [];
-  }, [options, selectedUniSlug]);
-
-  // Reset dept when uni changes
-  useEffect(() => {
-    setSelectedDeptSlug("");
-  }, [selectedUniSlug]);
-
-  // Fetch professors from CSV backend
-  const fetchProfessors = async (
-    uniSlug: string,
-    deptSlug: string
+  const fetchGPTProfessors = async (
+    field: string,
+    school: string
   ): Promise<FacultyMember[] | null> => {
     try {
-      const response = await fetch(`${API_BASE}/find-professors`, {
+      const response = await fetch(`${API_BASE}/gptprofessorsearch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          university: uniSlug,     // folder name (e.g., "Caltech")
-          department: deptSlug,    // file stem (e.g., "caltech_computer_science")
-          max: 200,
+          field: field.trim(),
+          school: school.trim(),
         }),
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error || "Server error while fetching data.");
+        throw new Error(err?.error || "Server error while fetching GPT professors.");
       }
 
       const data = await response.json();
-
       const list: FacultyMember[] = (data.professors || []).map((p: any) => ({
-        id: p.id || "",                    // must be supplied by backend to keep Learn More working
+        id: p.id || "",
         name: p.name,
         email: p.email || "Not Available",
         title: p.title,
@@ -96,16 +54,15 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
 
       return list;
     } catch (error) {
-      console.error("Fetch failed:", error);
-      setErrorMessage("Could not fetch professor data. Please try again. (The server is likely updating, please try again later!)");
+      console.error("GPT fetch failed:", error);
+      setErrorMessage("Could not fetch professor data. Please try again later.");
       return null;
     }
   };
 
-  // Submit
   const handleSubmit = async () => {
-    if (!selectedUniSlug || !selectedDeptSlug) {
-      setErrorMessage("Please select both a university and a department.");
+    if (!fieldOfStudy.trim() && !targetUniversity.trim()) {
+      setErrorMessage("Please enter at least a field of study or a university.");
       return;
     }
 
@@ -114,11 +71,11 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
     setFacultyMembers([]);
     setDisplayCount(3);
 
-    const faculty = await fetchProfessors(selectedUniSlug, selectedDeptSlug);
+    const faculty = await fetchGPTProfessors(fieldOfStudy, targetUniversity);
 
     if (!faculty || faculty.length === 0) {
       setFacultyMembers([]);
-      setErrorMessage("No matching professors found. Try another department.");
+      setErrorMessage("No matching professors found. Try a different query.");
     } else {
       setFacultyMembers(faculty);
     }
@@ -135,93 +92,50 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold text-gray-900 mb-4">Faculty Finder</h1>
           <p className="text-xl text-gray-600">
-            Browse professors by university and department
+            Find professors by field of study and university
           </p>
         </div>
 
-        <div className="glass rounded-3xl shadow-2xl p-8 md:p-12">
-          {loadingOptions ? (
-            <p>Loading options…</p>
-          ) : optionsError ? (
-            <div className="bg-red-100 text-red-700 px-4 py-3 rounded-md">{optionsError}</div>
-          ) : (
-            <div className="space-y-8">
-              {/* University */}
-              <div>
-                <label className="block text-2xl font-semibold text-gray-900 mb-4">
-                  Select your university
-                </label>
-                <select
-                  className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
-                  value={selectedUniSlug}
-                  onChange={(e) => setSelectedUniSlug(e.target.value)}
-                  required
-                >
-                  <option value="">Select a university…</option>
-                  {options.map((u) => (
-                    <option key={u.slug} value={u.slug}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <div className="glass rounded-3xl shadow-2xl p-8 md:p-12 space-y-8">
+          {/* Field of Study */}
+          <div>
+            <label className="block text-2xl font-semibold text-gray-900 mb-4">
+              What's your field of study?
+            </label>
+            <input
+              type="text"
+              value={fieldOfStudy}
+              onChange={(e) => setFieldOfStudy(e.target.value)}
+              placeholder="e.g., Artificial Intelligence"
+              className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+            />
+          </div>
 
-              {/* Department (appears after university selection) */}
-              <div>
-                <label className="block text-2xl font-semibold text-gray-900 mb-4">
-                  Select department
-                </label>
-                <select
-                  className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-                  value={selectedDeptSlug}
-                  onChange={(e) => setSelectedDeptSlug(e.target.value)}
-                  disabled={!selectedUniSlug}
-                  required
-                >
-                  {!selectedUniSlug ? (
-                    <option value="">Choose a university first…</option>
-                  ) : (
-                    <>
-                      <option value="">Select a department…</option>
-                      {departmentOptions.map((d) => (
-                        <option key={d.slug} value={d.slug}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-              </div>
+          {/* Target University */}
+          <div>
+            <label className="block text-2xl font-semibold text-gray-900 mb-4">
+              Select your target university
+            </label>
+            <input
+              type="text"
+              value={targetUniversity}
+              onChange={(e) => setTargetUniversity(e.target.value)}
+              placeholder="e.g., Caltech"
+              className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+            />
+          </div>
 
-              {errorMessage && (
-                <div className="bg-red-100 text-red-700 px-4 py-3 rounded-md">{errorMessage}</div>
-              )}
-
-              <button
-                onClick={handleSubmit}
-                disabled={!selectedUniSlug || !selectedDeptSlug || isLoading}
-                className="w-full btn-primary text-xl py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? (
-                  <>
-                    <span
-                      className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full mr-3"
-                      aria-label="loading"
-                    ></span>
-                    Finding Professors...
-                  </>
-                ) : (
-                  "Search →"
-                )}
-              </button>
-              {/* Large centered spinner */}
-              {isLoading && (
-                <div className="flex justify-center items-center mt-8">
-                  <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-                </div>
-              )}
-            </div>
+          {errorMessage && (
+            <div className="bg-red-100 text-red-700 px-4 py-3 rounded-md">{errorMessage}</div>
           )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="w-full btn-primary text-xl py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? "Finding Professors..." : "Search →"}
+          </button>
 
           {/* Results */}
           {visibleProfessors.length > 0 && (
@@ -248,9 +162,7 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                           <span className="text-2xl mr-4">👨‍🏫</span>
                           <div>
                             <h4 className="text-lg font-semibold text-gray-900">{faculty.name}</h4>
-                            {faculty.title && (
-                              <p className="text-sm text-gray-600">{faculty.title}</p>
-                            )}
+                            {faculty.title && <p className="text-sm text-gray-600">{faculty.title}</p>}
                             <p className="text-gray-600">{displayEmail}</p>
                             <p className="text-sm text-gray-500">
                               {faculty.university} • {faculty.department}
@@ -258,7 +170,6 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                           </div>
                         </div>
                         <div className="flex space-x-3">
-                          {/* Quick Email button */}
                           <a
                             href={hasValidEmail ? `mailto:${faculty.email}` : "#"}
                             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -274,10 +185,14 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                           >
                             Quick Email
                           </a>
-
-                          {/* Learn More — unchanged */}
                           <button
-                            onClick={() => onProfessorSelect(faculty.id)}
+                          onClick={() => {
+                            const openAlexId = faculty.id.split('/').pop();
+
+                            // Open a new tab with query params (email passed here)
+                            const email = encodeURIComponent(faculty.email || "");
+                            window.open(`/professors/${openAlexId}?email=${email}`, "_blank", "noopener,noreferrer");
+                          }}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
                           >
                             Learn More →
@@ -298,6 +213,11 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                   Load More Professors
                 </button>
               )}
+            </div>
+          )}
+          {isLoading && (
+            <div className="flex justify-center items-center mt-8">
+              <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
             </div>
           )}
         </div>

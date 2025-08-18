@@ -4,58 +4,62 @@ interface FacultyMember {
   id: string;
   name: string;
   email: string;
-  department?: string;
-  research_area?: string;
+  title?: string;
+  university: string;
+  department: string;
 }
 
 interface FacultyFinderProps {
   onProfessorSelect: (professorId: string) => void;
 }
 
+const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+
 const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
-  const [userMajor, setUserMajor] = useState("");
-  const [userSchool, setUserSchool] = useState("");
+  const [query, setQuery] = useState("");
   const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>([]);
   const [displayCount, setDisplayCount] = useState(3);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Fetch professors dynamically from your backend
-  const fetchProfessors = async (
-    school: string,
-    major: string
-  ): Promise<FacultyMember[] | null> => {
+  // GPT fetch
+  const fetchGPTProfessors = async (query: string): Promise<FacultyMember[] | null> => {
     try {
-      const response = await fetch("http://127.0.0.1:5050/find-professors", {
+      const response = await fetch(`${API_BASE}/gpt-professors`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ university: school, interests: [major] }),
+        body: JSON.stringify({
+          query,
+          max: 15,
+        }),
       });
 
-      if (!response.ok) throw new Error("Server error while fetching data.");
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error || "Server error while fetching GPT professors.");
+      }
 
       const data = await response.json();
-
-      // Transform professor data
-      const faculty = (data.professors || []).map((prof: any) => ({
-        id: prof.id,
-        name: prof.name,
-        email: prof.email || "Not Available",
-        department: prof.research_area || "N/A",
+      const list: FacultyMember[] = (data.professors || []).map((p: any) => ({
+        id: p.id || "",
+        name: p.name,
+        email: p.email || "Not Available",
+        title: p.title,
+        university: p.university,
+        department: p.department,
       }));
 
-      return faculty;
+      return list;
     } catch (error) {
-      console.error("Fetch failed:", error);
-      setErrorMessage("Could not fetch professor data. Please try again.");
+      console.error("GPT fetch failed:", error);
+      setErrorMessage("Could not fetch professor data. Please try again later.");
       return null;
     }
   };
 
-  // Handle search button click
   const handleSubmit = async () => {
-    if (!userSchool || !userMajor) {
-      setErrorMessage("Please enter both a school and a field of study.");
+    if (!query.trim()) {
+      setErrorMessage("Please enter a university or field of interest.");
       return;
     }
 
@@ -64,11 +68,11 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
     setFacultyMembers([]);
     setDisplayCount(3);
 
-    const faculty = await fetchProfessors(userSchool, userMajor);
+    const faculty = await fetchGPTProfessors(query.trim());
 
-    if (faculty === null || faculty.length === 0) {
+    if (!faculty || faculty.length === 0) {
       setFacultyMembers([]);
-      setErrorMessage("No matching professors found. Try adjusting your search.");
+      setErrorMessage("No matching professors found. Try a different query.");
     } else {
       setFacultyMembers(faculty);
     }
@@ -76,12 +80,7 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
     setIsLoading(false);
   };
 
-  // Load more professors (show 3 more)
-  const handleLoadMore = () => {
-    setDisplayCount((prev) => prev + 3);
-  };
-
-  // Slice the displayed professors based on displayCount
+  const handleLoadMore = () => setDisplayCount((prev) => prev + 3);
   const visibleProfessors = facultyMembers.slice(0, displayCount);
 
   return (
@@ -90,78 +89,54 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold text-gray-900 mb-4">Faculty Finder</h1>
           <p className="text-xl text-gray-600">
-            Find professors by university and field of study
-          </p>
-          <p className="text-sm text-gray-500 italic mt-1">
-            <strong>Note:</strong> The search may take a couple of minutes to complete.
+            Enter a university or field of interest to find professors
           </p>
         </div>
 
-        <div className="glass rounded-3xl shadow-2xl p-8 md:p-12">
-          <div className="space-y-8">
-            {/* Field of Study */}
-            <div>
-              <label className="block text-2xl font-semibold text-gray-900 mb-4">
-                What's your field of study?
-              </label>
-              <input
-                type="text"
-                value={userMajor}
-                onChange={(e) => setUserMajor(e.target.value)}
-                placeholder="e.g., Machine Learning"
-                className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
-              />
-              {userMajor && (
-                <div className="mt-3 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-500">
-                  <p className="text-lg text-blue-600 font-medium">Field: {userMajor}</p>
-                </div>
-              )}
-            </div>
-
-            {/* University Input */}
-            <div>
-              <label className="block text-2xl font-semibold text-gray-900 mb-4">
-                Select your target university
-              </label>
-              <input
-                type="text"
-                value={userSchool}
-                onChange={(e) => setUserSchool(e.target.value)}
-                placeholder="e.g., Stanford University"
-                className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-              />
-              {userSchool && (
-                <div className="mt-3 p-3 bg-purple-50 rounded-lg border-l-4 border-purple-500">
-                  <p className="text-lg text-purple-600 font-medium">University: {userSchool}</p>
-                </div>
-              )}
-            </div>
-
-            {errorMessage && (
-              <div className="bg-red-100 text-red-700 px-4 py-3 rounded-md">
-                {errorMessage}
-              </div>
-            )}
-
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading}
-              className="w-full btn-primary text-xl py-4 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {isLoading ? (
-                <>
-                  <span
-                    className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full mr-3"
-                    aria-label="loading"
-                  ></span>
-                  Finding Professors...
-                </>
-              ) : (
-                "Search →"
-              )}
-            </button>
+        <div className="glass rounded-3xl shadow-2xl p-8 md:p-12 space-y-8">
+          {/* Text query input */}
+          <div>
+            <label className="block text-2xl font-semibold text-gray-900 mb-4">
+              Search for professors
+            </label>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g., Artificial Intelligence at Caltech"
+              className="w-full px-6 py-4 text-lg border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+            />
           </div>
 
+          {errorMessage && (
+            <div className="bg-red-100 text-red-700 px-4 py-3 rounded-md">{errorMessage}</div>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="w-full btn-primary text-xl py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? (
+              <>
+                <span
+                  className="animate-spin inline-block w-6 h-6 border-4 border-blue-600 border-t-transparent rounded-full mr-3"
+                  aria-label="loading"
+                ></span>
+                Finding Professors...
+              </>
+            ) : (
+              "Search →"
+            )}
+          </button>
+
+          {isLoading && (
+            <div className="flex justify-center items-center mt-8">
+              <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            </div>
+          )}
+
+          {/* Results */}
           {visibleProfessors.length > 0 && (
             <div className="mt-12 p-8 bg-gradient-to-r from-gray-50 to-blue-50 rounded-2xl border border-gray-200">
               <h3 className="text-2xl font-bold text-gray-900 mb-6 text-center flex items-center justify-center">
@@ -175,22 +150,22 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                     faculty.email !== "Not Available" &&
                     faculty.email !== "N/A";
                   const displayEmail = hasValidEmail ? faculty.email : "N/A";
+
                   return (
                     <div
-                      key={faculty.id}
+                      key={`${faculty.university}-${faculty.department}-${faculty.name}`}
                       className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-blue-500 hover:shadow-md transition-shadow duration-200"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center flex-1">
                           <span className="text-2xl mr-4">👨‍🏫</span>
                           <div>
-                            <h4 className="text-lg font-semibold text-gray-900">
-                              {faculty.name}
-                            </h4>
+                            <h4 className="text-lg font-semibold text-gray-900">{faculty.name}</h4>
+                            {faculty.title && <p className="text-sm text-gray-600">{faculty.title}</p>}
                             <p className="text-gray-600">{displayEmail}</p>
-                            {faculty.department && (
-                              <p className="text-sm text-gray-500">{faculty.department}</p>
-                            )}
+                            <p className="text-sm text-gray-500">
+                              {faculty.university} • {faculty.department}
+                            </p>
                           </div>
                         </div>
                         <div className="flex space-x-3">
@@ -222,7 +197,6 @@ const FacultyFinder: React.FC<FacultyFinderProps> = ({ onProfessorSelect }) => {
                 })}
               </div>
 
-              {/* Load More button */}
               {displayCount < facultyMembers.length && (
                 <button
                   onClick={handleLoadMore}
