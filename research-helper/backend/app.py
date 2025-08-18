@@ -30,11 +30,11 @@ import uuid, hashlib  # NEW for metrics
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 
-# Allow both localhost (dev) and your production site
-CORS(app, 
-     origins=["http://localhost:5173", "https://researchconnectai.com"],
-     supports_credentials=True,
-     resources={r"/*": {"origins": ["http://localhost:5173", "https://researchconnectai.com"]}})
+CORS(
+    app,
+    origins=["http://localhost:5173", "https://researchconnectai.com", "https://www.researchconnectai.com"],
+    supports_credentials=True
+)
 
 # AI -----------------------
 # USE THE API key on ur local environment to run the email generator
