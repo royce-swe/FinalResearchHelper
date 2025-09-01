@@ -7,8 +7,8 @@ import royceImage from '../assets/images/royce-mathis.jpg';
 import samkitImage from '../assets/images/samkit-bothra.jpg';
 import aidanImage from '../assets/images/aidan-don.jpg'; // You'll need to add this image
 
-//const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
-const API_BASE = "http://localhost:5050";
+const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+//const API_BASE = "http://localhost:5050";
 
 const teamMembers: TeamMember[] = [
   {

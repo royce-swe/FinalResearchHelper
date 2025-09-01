@@ -39,8 +39,8 @@ const ProfessorDetailPage: React.FC = () => {
   const [studentSkills, setStudentSkills] = useState('');
   const [generatedEmail, setGeneratedEmail] = useState('');
 
-  //const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
-  const API_BASE = "http://localhost:5050";
+  const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+  //const API_BASE = "http://localhost:5050";
 
   const handleBack = () => navigate('/finder');
 

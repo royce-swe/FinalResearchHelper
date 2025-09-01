@@ -10,8 +10,8 @@ interface FacultyMember {
   department: string;
 }
 
-//const API_BASE = "https://finalresearchhelper-production.up.railway.app";
-const API_BASE = "http://localhost:5050";
+const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+//const API_BASE = "http://localhost:5050";
 
 const FacultyFinder: React.FC = () => {
   const navigate = useNavigate();
