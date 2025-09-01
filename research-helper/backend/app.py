@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import pandas as pd
 import time
-from functools  import lru_cache
+from functools  import lru_cache, wraps
 from rapidfuzz import fuzz
 from pyalex import Institutions, Authors, Works, config
 import requests
@@ -18,9 +18,13 @@ from ddgs import DDGS
 from openai import OpenAI
 import os
 import unicodedata
+import bcrypt
 import json
 from threading import RLock
 import uuid, hashlib  # NEW for metrics
+import mysql.connector
+import jwt
+import datetime
 
 
 # =========================================================
@@ -29,6 +33,7 @@ import uuid, hashlib  # NEW for metrics
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
+app.config["SECRET_KEY"] = "wetsocks4life"
 
 CORS(
     app,
@@ -958,107 +963,31 @@ def find_professors():
 # Metrics Utilities
 # ========================================================
 
-
-METRICS_FILE = (Path(__file__).resolve().parent / "metrics.json")
-METRICS_LOCK = RLock()
-
-def _sha(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-def _load_metrics():
-    if METRICS_FILE.exists():
-        try:
-            with open(METRICS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"[WARN] failed to load metrics: {e}")
-    return {
-        "students_connected": 0,
-        "seen_ids": [],
-        "universities_covered": 0,
-        "faculty_contacts": 0,
-    }
-
-def _save_metrics(m):
-    try:
-        tmp = METRICS_FILE.with_suffix(".tmp.json")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(m, f, ensure_ascii=False, indent=2)
-        tmp.replace(METRICS_FILE)
-    except Exception as e:
-        print(f"[WARN] failed to save metrics: {e}")
-
-def _compute_university_and_faculty_counts():
-    """Scan Faculty/ and compute totals."""
-    uni_count = 0
-    faculty_rows = 0
-    if FACULTY_DIR.exists():
-        for uni_dir in [p for p in FACULTY_DIR.iterdir() if p.is_dir()]:
-            csvs = list(uni_dir.glob("*.csv"))
-            if csvs:
-                uni_count += 1
-            for csv_path in csvs:
-                try:
-                    # Fast: just read one column to count rows
-                    df = pd.read_csv(csv_path, usecols=[0])
-                    faculty_rows += len(df.index)
-                except Exception:
-                    # Fallback rough count
-                    try:
-                        with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
-                            faculty_rows += max(sum(1 for _ in f) - 1, 0)
-                    except Exception:
-                        pass
-    return uni_count, max(faculty_rows, 0)
-
-# Initialize metrics on boot
-METRICS = _load_metrics()
-uc, fc = _compute_university_and_faculty_counts()
-METRICS["universities_covered"] = uc
-METRICS["faculty_contacts"] = fc
-_save_metrics(METRICS)
-
-@app.route("/metrics/visit", methods=["POST"])
-def metrics_visit():
-    # simple bot filter
-    ua = (request.headers.get("User-Agent") or "").lower()
-    if any(x in ua for x in ["bot", "spider", "crawl", "monitor"]):
-        return jsonify({"ok": True, "counted": False})
-
-    rcid = request.cookies.get("rcid")
-    if not rcid:
-        rcid = str(uuid.uuid4())
-
-    rcid_hash = _sha(rcid)
-    counted = False
-
-    with METRICS_LOCK:
-        if rcid_hash not in METRICS.get("seen_ids", []):
-            METRICS["seen_ids"].append(rcid_hash)
-            METRICS["students_connected"] = int(METRICS.get("students_connected", 0)) + 1
-            _save_metrics(METRICS)
-            counted = True
-
-    resp = make_response(jsonify({"ok": True, "counted": counted}))
-    # 2 years, Lax so it’s sent on same-site navigations/fetch
-    resp.set_cookie("rcid", rcid, max_age=60*60*24*730, samesite="Lax")
-    return resp
-
 @app.route("/metrics", methods=["GET"])
 def get_metrics():
-    # Recompute CSV-based numbers for freshness
-    uc, fc = _compute_university_and_faculty_counts()
-    with METRICS_LOCK:
-        METRICS["universities_covered"] = uc
-        METRICS["faculty_contacts"] = fc
-        students = int(METRICS.get("students_connected", 0))
-        _save_metrics(METRICS)
-        payload = {
-            "students_connected": students,
-            "universities_covered": uc,
-            "faculty_contacts": fc,
-        }
-    return jsonify(payload)
+    cursor = db.cursor(dictionary=True)
+
+    # Total students connected
+    cursor.execute("SELECT COUNT(*) AS total_students FROM users2")
+    total_students = cursor.fetchone()["total_students"]
+
+    # Faculty contacts
+    cursor.execute("SELECT COUNT(*) AS total_faculty FROM user_connections")
+    total_faculty = cursor.fetchone()["total_faculty"]
+
+    # Universities covered (distinct universities from user_connections)
+    cursor.execute("SELECT COUNT(DISTINCT university) AS total_universities FROM user_connections")
+    total_universities = cursor.fetchone()["total_universities"]
+
+    cursor.close()
+
+    return jsonify({
+        "students_connected": total_students,
+        "faculty_contacts": total_faculty,
+        "universities_covered": total_universities
+    })
+
+
 
 # =========================================================
 # NEW ENDPOINT: Professors by School + Field
@@ -1162,6 +1091,164 @@ def search_professors():
     except Exception as e:
         print(f"[ERROR] /gptprofessorsearch failed: {e}")
         return jsonify({"error": "Failed to fetch professors"}), 500
+    
+# MySQL Shi ________________________________________________
+db = mysql.connector.connect(
+    host="maglev.proxy.rlwy.net",   # just the host
+    user="root",
+    password="FyyPhJFaKtZmvsuGFaoegfzngiQzGYbL",  # your Railway password
+    database="railway",
+    port=47263                       # from the URL
+)
+cursor = db.cursor()
+
+@app.route("/auth/signup", methods=["POST"])
+def signup():
+    data = request.get_json()
+    name = data.get("name")
+    email = data.get("email")
+    password = data.get("password")
+
+    if not name or not email or not password:
+        return jsonify({"message": "All fields are required"}), 400
+
+    cursor = db.cursor(dictionary=True)
+
+    # Check if user already exists
+    cursor.execute("SELECT id FROM users2 WHERE email = %s", (email,))
+    if cursor.fetchone():
+        cursor.close()
+        return jsonify({"message": "Email already registered"}), 400
+
+    # Hash the password
+    hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+
+    # Insert into database
+    cursor.execute(
+        "INSERT INTO users2 (name, email, password_hash, created_at) VALUES (%s, %s, %s, NOW())",
+        (name, email, hashed_pw.decode("utf-8"))
+    )
+    db.commit()
+    user_id = cursor.lastrowid
+
+    cursor.close()
+
+    # Create JWT token
+    token = jwt.encode(
+        {"id": user_id, "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7)},
+        app.config["SECRET_KEY"],
+        algorithm="HS256"
+    )
+
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": user_id,
+            "name": name,
+            "email": email,
+            "createdAt": datetime.datetime.utcnow().isoformat()
+        }
+    })
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"message": "Email and password are required"}), 400
+
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id, name, email, password_hash FROM users2 WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    cursor.close()
+
+    if not user:
+        return jsonify({"message": "Invalid email or password"}), 401
+
+    # Verify password
+    if not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+        return jsonify({"message": "Invalid email or password"}), 401
+
+    # Create JWT
+    token = jwt.encode(
+        {"id": user["id"], "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)},
+        app.config["SECRET_KEY"],
+        algorithm="HS256"
+    )
+
+    return jsonify({
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"]
+        }
+    })
+
+#Check login------------
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+
+        if "Authorization" in request.headers:
+            auth_header = request.headers["Authorization"]
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+
+        if not token:
+            return jsonify({"error": "Token is missing!"}), 401
+
+        try:
+            data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            current_user = data  # <--- use entire payload
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired!"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token!"}), 401
+
+        return f(current_user=current_user, *args, **kwargs)
+
+    return decorated
+
+@app.route("/user/connections", methods=["GET"])
+@token_required
+def get_connections(current_user):
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM user_connections WHERE user_id = %s ORDER BY date_contacted DESC",
+        (current_user['id'],)
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+
+    return jsonify({"connections": rows})
+
+
+@app.route("/user/connections", methods=["POST"])
+@token_required  # middleware to check JWT and attach user info
+def add_connection(current_user):
+    data = request.get_json()
+    professor_name = data.get("professorName")
+    university = data.get("university")
+    email = data.get("email")
+    field = data.get("field")
+
+    cursor = db.cursor()
+    cursor.execute(
+        "INSERT INTO user_connections (user_id, professor_name, university, email, field) VALUES (%s, %s, %s, %s, %s)",
+        (current_user['id'], professor_name, university, email, field)
+    )
+    db.commit()
+    cursor.close()
+
+    return jsonify({"message": "Professor saved successfully"}), 201
+
+
 
 
 # -------------------------------

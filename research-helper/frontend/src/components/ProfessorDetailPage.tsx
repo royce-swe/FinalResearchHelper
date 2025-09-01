@@ -39,8 +39,8 @@ const ProfessorDetailPage: React.FC = () => {
   const [studentSkills, setStudentSkills] = useState('');
   const [generatedEmail, setGeneratedEmail] = useState('');
 
-  const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
-  //const API_BASE = "http://localhost:5050";
+  //const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+  const API_BASE = "http://localhost:5050";
 
   const handleBack = () => navigate('/finder');
 
@@ -232,6 +232,33 @@ useEffect(() => {
                 ))}
               </div>
             </div>
+            <button
+            onClick={async () => {
+                const token = localStorage.getItem('research_helper_token');
+                const response = await fetch(`${API_BASE}/user/connections`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    professorName: professor.name,
+                    university: professor.university,
+                    email: professor.email,
+                    field: professor.department // using department as field
+                  })
+                });
+
+                if (response.ok) {
+                  alert('Professor saved to your dashboard!');
+                } else {
+                  alert('Failed to save professor. Make sure you are logged in.');
+                }
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-colors duration-200"
+            >
+              Save to Dashboard
+          </button>
           </div>
 
           <div className="lg:col-span-1">

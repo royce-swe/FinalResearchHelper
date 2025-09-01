@@ -10,8 +10,8 @@ interface FacultyMember {
   department: string;
 }
 
-const API_BASE = "https://finalresearchhelper-production.up.railway.app";
-//const API_BASE = "http://localhost:5050";
+//const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+const API_BASE = "http://localhost:5050";
 
 const FacultyFinder: React.FC = () => {
   const navigate = useNavigate();
@@ -61,27 +61,36 @@ const FacultyFinder: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    const token = localStorage.getItem('research_helper_token');
+    if (!token) {
+      // Not logged in → redirect to login page
+      navigate('/login');
+      return;
+    }
+  
+    // Proceed with your current search logic
     if (!fieldOfStudy.trim() && !targetUniversity.trim()) {
       setErrorMessage("Please enter at least a field of study or a university.");
       return;
     }
-
+  
     setIsLoading(true);
     setErrorMessage("");
     setFacultyMembers([]);
     setDisplayCount(3);
-
+  
     const faculty = await fetchGPTProfessors(fieldOfStudy, targetUniversity);
-
+  
     if (!faculty || faculty.length === 0) {
       setFacultyMembers([]);
       setErrorMessage("No matching professors found. Try a different query.");
     } else {
       setFacultyMembers(faculty);
     }
-
+  
     setIsLoading(false);
   };
+  
 
   const handleLoadMore = () => setDisplayCount((prev) => prev + 3);
   const visibleProfessors = facultyMembers.slice(0, displayCount);
