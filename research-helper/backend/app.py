@@ -23,6 +23,7 @@ import json
 from threading import RLock
 import uuid, hashlib  # NEW for metrics
 import mysql.connector
+from mysql.connector import Error
 import jwt
 import datetime
 
@@ -1102,8 +1103,24 @@ db = mysql.connector.connect(
 )
 cursor = db.cursor()
 
+def get_db():
+    global db
+    try:
+        db.ping(reconnect=True, attempts=3, delay=2)
+    except:
+        db = mysql.connector.connect(
+            host="maglev.proxy.rlwy.net",   # just the host
+            user="root",
+            password="FyyPhJFaKtZmvsuGFaoegfzngiQzGYbL",  # your Railway password
+            database="railway",
+        )
+    return db
+
 @app.route("/auth/signup", methods=["POST"])
 def signup():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
     data = request.get_json()
     name = data.get("name")
     email = data.get("email")
@@ -1140,6 +1157,9 @@ def signup():
         algorithm="HS256"
     )
 
+    cursor.close()
+    db.close()
+
     return jsonify({
         "token": token,
         "user": {
@@ -1153,6 +1173,9 @@ def signup():
 
 @app.route("/auth/login", methods=["POST"])
 def login():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
     data = request.get_json()
     email = data.get("email")
     password = data.get("password")
@@ -1178,6 +1201,9 @@ def login():
         app.config["SECRET_KEY"],
         algorithm="HS256"
     )
+
+    cursor.close()
+    db.close()
 
     return jsonify({
         "token": token,
