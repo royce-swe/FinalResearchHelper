@@ -50,7 +50,7 @@ const LoginPage: React.FC = () => {
               Welcome Back
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
-              Sign in to your Research Helper account
+              Sign in to your Research Connect account
             </p>
           </div>
           

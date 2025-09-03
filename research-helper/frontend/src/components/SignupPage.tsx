@@ -72,7 +72,7 @@ const SignupPage: React.FC = () => {
               Create Account
             </h2>
             <p className="mt-2 text-center text-sm text-gray-600">
-              Join Research Helper to track your professor connections
+              Join Research Connect to track your professor connections
             </p>
           </div>
           
