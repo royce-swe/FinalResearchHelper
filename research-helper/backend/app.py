@@ -543,80 +543,6 @@ def scrape_page(url, depth=0, visited=None, prefer_domain: str | None = None):
 
     return []
 
-
-# =========================================================
-# Email Lookup & Caching
-# =========================================================
-
-# def find_email_online(professor_name: str, university_name: str) -> str:
-#     """
-#     Try multiple DuckDuckGo queries. Uses a persistent cache (email_cache.json)
-#     and prefers emails on the university's .edu domain when possible.
-#     """
-#     # Normalize university for both cache key and query
-#     norm_uni = _normalize_uni(university_name)
-#     key_str = str((professor_name.lower().strip(), norm_uni.lower().strip()))
-
-#     # 1) Cache hit?
-#     cached = EMAIL_CACHE.get(key_str)
-#     if cached:
-#         return cached
-
-#     # 2) Build queries with normalized uni
-#     queries = [
-#         f'"{professor_name}" "{norm_uni}" site:.edu email',
-#         f'"{professor_name}" "{norm_uni}" faculty site:.edu contact',
-#         f'"{professor_name}" "{norm_uni}" professor site:.edu',
-#     ]
-
-#     # 3) Prefer domain heuristic (very light)
-#     prefer_domain = None
-#     tokens = re.findall(r"[A-Za-z]+", norm_uni.lower())
-#     if "stanford" in tokens:
-#         prefer_domain = "stanford.edu"
-#     elif "caltech" in tokens:
-#         prefer_domain = "caltech.edu"
-#     elif "florida" in tokens and "atlantic" in tokens:
-#         prefer_domain = "fau.edu"
-#     elif "florida" in tokens and "state" in tokens:
-#         prefer_domain = "fsu.edu"
-#     elif "central" in tokens and "florida" in tokens:
-#         prefer_domain = "ucf.edu"
-#     elif "wisconsin" in tokens and ("madison" in tokens or "–madison" in norm_uni.lower()):
-#         prefer_domain = "wisc.edu"
-
-#     # 4) Search & scrape
-#     for query in queries:
-#         print(f'\n🔎 [DEBUG] Starting search for query: {query}')
-#         links = search_duckduckgo(query)
-
-#         for link in links:
-#             print(f"   → [DEBUG] Checking: {link}")
-#             emails = scrape_page(link, prefer_domain=prefer_domain)
-#             valid_emails = [
-#                 e for e in emails
-#                 if not any(x in e.lower() for x in ["example", "support", "noreply"])
-#             ]
-#             if valid_emails:
-#                 best = valid_emails[0]
-#                 with EMAIL_CACHE_LOCK:
-#                     EMAIL_CACHE[key_str] = best
-#                 _save_email_cache()
-#                 print(f"✅ [DEBUG] Found valid email: {best}")
-#                 return best
-#             else:
-#                 print("      ⚠️ [DEBUG] No valid emails found on this page.")
-#             time.sleep(1)
-
-#     # 5) Nothing found — remember failure to avoid repeated scraping
-#     print("❌ [DEBUG] No email found after all queries.")
-#     with EMAIL_CACHE_LOCK:
-#         EMAIL_CACHE[key_str] = "Not Available"
-#     _save_email_cache()
-#     return "Not Available"
-
-# ---------------------------------------------
-
 # ---------------- NEW ENDPOINT: fetch recent papers ----------------
 def fetch_recent_papers(author_id, max_papers=5):
     """
@@ -1244,6 +1170,7 @@ def token_required(f):
 @app.route("/user/connections", methods=["GET"])
 @token_required
 def get_connections(current_user):
+    db = get_db()
     cursor = db.cursor(dictionary=True)
     cursor.execute(
         "SELECT * FROM user_connections WHERE user_id = %s ORDER BY date_contacted DESC",
@@ -1258,13 +1185,14 @@ def get_connections(current_user):
 @app.route("/user/connections", methods=["POST"])
 @token_required  # middleware to check JWT and attach user info
 def add_connection(current_user):
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
     data = request.get_json()
     professor_name = data.get("professorName")
     university = data.get("university")
     email = data.get("email")
     field = data.get("field")
 
-    cursor = db.cursor()
     cursor.execute(
         "INSERT INTO user_connections (user_id, professor_name, university, email, field) VALUES (%s, %s, %s, %s, %s)",
         (current_user['id'], professor_name, university, email, field)
