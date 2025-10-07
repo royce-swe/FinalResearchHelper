@@ -65,10 +65,13 @@ const UserDashboard: React.FC = () => {
   };
 
   const saveAllStatuses = async () => {
+    if (Object.keys(editedStatuses).length === 0) return; // Nothing to save
+  
     const token = localStorage.getItem('research_helper_token');
   
     try {
-      await Promise.all(
+      // Send PATCH requests for all edited connections
+      const responses = await Promise.all(
         Object.entries(editedStatuses).map(([id, status]) =>
           fetch(`${API_BASE}/user/connections/${id}`, {
             method: 'PATCH',
@@ -81,7 +84,15 @@ const UserDashboard: React.FC = () => {
         )
       );
   
-      // Update local state
+      // Check for any failed requests
+      const failed = responses.filter(res => !res.ok);
+      if (failed.length > 0) {
+        console.error(`${failed.length} updates failed`);
+        alert("Some updates failed. Please try again.");
+        return;
+      }
+  
+      // Update local state to reflect saved statuses
       setConnections(prev =>
         prev.map(conn =>
           editedStatuses[conn.id] ? { ...conn, status: editedStatuses[conn.id] } : conn
@@ -90,13 +101,21 @@ const UserDashboard: React.FC = () => {
   
       // Clear edits
       setEditedStatuses({});
-      calculateStats(connections.map(conn =>
-        editedStatuses[conn.id] ? { ...conn, status: editedStatuses[conn.id] } : conn
-      ));
+  
+      // Update stats
+      calculateStats(
+        connections.map(conn =>
+          editedStatuses[conn.id] ? { ...conn, status: editedStatuses[conn.id] } : conn
+        )
+      );
+  
+      alert("All statuses saved successfully!");
     } catch (error) {
-      console.error('Failed to save statuses:', error);
+      console.error("Failed to save statuses:", error);
+      alert("An error occurred while saving statuses.");
     }
-  };  
+  };
+  
   
 
   const updateConnectionStatus = async (connectionId: string, status: Connection['status']) => {
@@ -131,7 +150,7 @@ const UserDashboard: React.FC = () => {
 
   const deleteConnection = async (connectionId: string) => {
     if (!confirm('Are you sure you want to delete this connection?')) return;
-
+  
     try {
       const token = localStorage.getItem('research_helper_token');
       const response = await fetch(`${API_BASE}/user/connections/${connectionId}`, {
@@ -140,14 +159,18 @@ const UserDashboard: React.FC = () => {
           'Authorization': `Bearer ${token}`,
         },
       });
-
+  
       if (response.ok) {
         const updatedConnections = connections.filter(conn => conn.id !== connectionId);
         setConnections(updatedConnections);
         calculateStats(updatedConnections);
+      } else {
+        console.error('Failed to delete connection');
+        alert('Failed to delete connection');
       }
     } catch (error) {
       console.error('Failed to delete connection:', error);
+      alert('Failed to delete connection');
     }
   };
 

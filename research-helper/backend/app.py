@@ -1328,6 +1328,44 @@ def add_connection(current_user):
 
     return jsonify({"message": "Professor saved successfully"}), 201
 
+@app.route("/user/connections/<int:connection_id>", methods=["PATCH"])
+@token_required
+def update_connection_status(current_user, connection_id):
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    data = request.get_json()
+    status = data.get("status")
+
+    if status not in ("pending", "responded", "no_response"):
+        return jsonify({"error": "Invalid status"}), 400
+
+    cursor.execute(
+        "UPDATE user_connections SET status = %s WHERE id = %s AND user_id = %s",
+        (status, connection_id, current_user['id'])
+    )
+    db.commit()
+    cursor.close()
+
+    return jsonify({"message": "Status updated successfully"})
+
+@app.route("/user/connections/<int:connection_id>", methods=["DELETE"])
+@token_required
+def delete_connection(current_user, connection_id):
+    db = get_db()
+    cursor = db.cursor()
+    
+    # Ensure the user owns this connection
+    cursor.execute(
+        "DELETE FROM user_connections WHERE id = %s AND user_id = %s",
+        (connection_id, current_user['id'])
+    )
+    
+    db.commit()
+    cursor.close()
+    
+    return jsonify({"message": "Connection deleted successfully"}), 200
+
+
 
 
 
