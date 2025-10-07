@@ -224,6 +224,7 @@ def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int
       3) Fallback: search by name only and fuzzy-match institutions.
     Returns '' if not found quickly.
     """
+    best_id =''
     try:
         t0 = time.time()
         uni_norm = _normalize_uni(university)
@@ -295,7 +296,7 @@ def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int
 
     print(f"Found open alex id for {name}: {best_id}")
 
-    return None
+    return best_id
 
 def prettify_department(filename: str, uni_prefix: str) -> str:
     """
