@@ -4,6 +4,8 @@ import { User, LogOut, Menu, X } from 'lucide-react';
 import { AuthContext } from './AuthContext';
 import logoImage from '../assets/images/logo.jpg';
 
+//Pushing
+
 const Navigation: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
