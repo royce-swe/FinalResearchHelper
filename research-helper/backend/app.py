@@ -661,6 +661,7 @@ def get_professor_details(prof_id):
 
             # Enrich from OpenAlex if we can resolve an ID
             oa_id = get_openalex_id_for_prof(name, uni)  # cached helper
+            time.sleep(0.20)
             research_areas = []
             recent_papers = []
             if oa_id:
