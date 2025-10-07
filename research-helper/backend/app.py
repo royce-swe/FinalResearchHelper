@@ -9,7 +9,8 @@ import pandas as pd
 import time
 from functools  import lru_cache, wraps
 from rapidfuzz import fuzz
-from pyalex import Institutions, Authors, Works, config
+from pyalex import Works, Authors, Sources, Institutions, Topics, Publishers, Funders, config
+import pyalex
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -49,6 +50,7 @@ CORS(
 
 
 client = OpenAI()
+pyalex.config.email = "jalenmathis7@gmail.com"
 
 # -------- Faculty directory base --------
 FACULTY_DIR = (Path(__file__).resolve().parent / "Faculty")
@@ -215,63 +217,64 @@ def _best_inst_match_score(author_insts, target_uni) -> int:
             best = score
     return best
 
+# =========================================================
+# Helper: Normalize university name (you can expand aliases)
+# =========================================================
+def _normalize_uni(uni_name: str) -> str:
+    return (uni_name or "").lower().strip()
+
+
+# =========================================================
+# Main function
+# =========================================================
 @lru_cache(maxsize=1000)
-def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:
+def get_openalex_id_for_prof(name: str, university: str = None, *, fuzzy_threshold: int = 70) -> str:
     """
-    Robust ID finder:
-      1) Normalize university name (map acronyms/aliases).
-      2) Search authors by name.
-      3) Keep candidates with at least one work affiliated with the target university.
-      4) Return the best match based on works count and fuzzy match.
+    Find an OpenAlex author ID using the autocomplete endpoint.
+    
+    - name: full professor name (e.g., "Ronald Swanstrom")
+    - university: optional; will fuzzy-match against the 'hint' field
+    - Returns the OpenAlex short_id (e.g., "authors/A5007433649") or '' if not found.
     """
-    best_id = ''
     try:
-        t0 = time.time()
-        uni_norm = _normalize_uni(university)
+        url = f"https://api.openalex.org/autocomplete/authors?q={requests.utils.quote(name)}"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
 
-        # Search authors by name only
-        candidates_iter = (
-            Authors()
-            .search(name)
-            .select(["id", "display_name", "works_count", "works"])
-            .paginate(per_page=40)
-        )
+        if not data.get("results"):
+            print(f"No results for {name}")
+            return ""
 
-        best_score, best_works = -1, -1
+        best_id = ""
+        best_score = -1
 
-        for page in candidates_iter:
-            for author in page:
-                # Check if any work lists the target university
-                works = author.get("works") or []
-                affiliated = False
-                for w in works:
-                    institutions = w.get("institutions") or []
-                    for inst in institutions:
-                        inst_name = inst.get("display_name") or ""
-                        if _best_inst_match_score(inst_name, uni_norm) >= fuzzy_threshold:
-                            affiliated = True
-                            break
-                    if affiliated:
-                        break
+        for author in data["results"]:
+            # If no university is specified, just take the first result
+            if university:
+                hint = author.get("hint") or ""
+                score = fuzz.partial_ratio(hint.lower(), university.lower())
+            else:
+                score = 100  # no uni specified, treat all as perfect match
 
-                if affiliated:
-                    score = int(author.get("works_count") or 0)
-                    if score > best_works:  # prioritize authors with more publications
-                        best_id = (author.get("id") or "").split("/")[-1]
-                        best_works = score
+            if score > best_score:
+                best_score = score
+                best_id = author.get("short_id") or ""
 
-            # Soft timeout to avoid long-running requests
-            if time.time() - t0 > 15.0:
-                break
-
-        if best_id:
+        if best_score >= fuzzy_threshold:
             return best_id
+        else:
+            print(f"No match above threshold for {name} (best score {best_score})")
+            return ""
 
+    except requests.HTTPError as e:
+        print(f"[WARN] HTTP error for {name}: {e}")
+    except requests.RequestException as e:
+        print(f"[WARN] Request failed for {name}: {e}")
     except Exception as e:
-        print(f"[WARN] get_openalex_id_for_prof unexpected error for {name}: {e}")
+        print(f"[WARN] Unexpected error for {name}: {e}")
 
-    print(f"Could not find OpenAlex ID for {name}")
-    return ''  # fallback if nothing is found
+    return ""
 
 # @lru_cache(maxsize=1000)
 # def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:

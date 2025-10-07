@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from './AuthContext';
 import { Mail, Calendar, User, School, ExternalLink, Trash2, Plus } from 'lucide-react';
+import { API_BASE } from './config.ts';
 
 interface Connection {
   id: string;
@@ -13,7 +14,7 @@ interface Connection {
   notes?: string;
 }
 
-const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+//const API_BASE = "https://finalresearchhelper-production.up.railway.app";
 //const API_BASE = "http://localhost:5050";
 
 const UserDashboard: React.FC = () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLocation } from "react-router-dom";
+import { API_BASE } from './config.ts';
 
 interface Paper {
   title: string;
@@ -39,7 +40,7 @@ const ProfessorDetailPage: React.FC = () => {
   const [studentSkills, setStudentSkills] = useState('');
   const [generatedEmail, setGeneratedEmail] = useState('');
 
-  const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
+  //const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
   //const API_BASE = "http://localhost:5050";
 
   const handleBack = () => navigate('/finder');

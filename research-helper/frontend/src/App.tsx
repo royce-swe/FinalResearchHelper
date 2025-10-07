@@ -11,9 +11,10 @@ import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import UserDashboard from './components/UserDashboard';
 import Footer from './components/Footer';
+import { API_BASE } from './components/config.ts';
 
 //const API_BASE = "http://localhost:5050";
-const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+//const API_BASE = "https://finalresearchhelper-production.up.railway.app";
 
 function App() {
   // Count this browser as a unique visit (cookie prevents double-counting)

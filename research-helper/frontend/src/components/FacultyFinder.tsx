@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE } from './config.ts';
 
 interface FacultyMember {
   id: string;
@@ -10,7 +11,7 @@ interface FacultyMember {
   department: string;
 }
 
-const API_BASE = "https://finalresearchhelper-production.up.railway.app";
+//const API_BASE = "https://finalresearchhelper-production.up.railway.app";
 //const API_BASE = "http://localhost:5050";
 
 const FacultyFinder: React.FC = () => {
