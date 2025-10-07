@@ -217,89 +217,147 @@ def _best_inst_match_score(author_insts, target_uni) -> int:
 
 @lru_cache(maxsize=1000)
 def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:
-    # Tuned fuzzy down to 70 from 80
     """
     Robust ID finder:
       1) Normalize university name (map acronyms/aliases).
-      2) Try filtering Authors by institution ID AND name.
-      3) Fallback: search by name only and fuzzy-match institutions.
-    Returns '' if not found quickly.
+      2) Search authors by name.
+      3) Keep candidates with at least one work affiliated with the target university.
+      4) Return the best match based on works count and fuzzy match.
     """
-    best_id =''
+    best_id = ''
     try:
         t0 = time.time()
         uni_norm = _normalize_uni(university)
 
-        # --- Try to resolve institution ID first
-        try:
-            insts = list(
-                Institutions()
-                .search(uni_norm)
-                .select(["id", "display_name"])
-                .get()
-            )
-        except Exception:
-            insts = []
+        # Search authors by name only
+        candidates_iter = (
+            Authors()
+            .search(name)
+            .select(["id", "display_name", "works_count", "works"])
+            .paginate(per_page=40)
+        )
 
-        if insts:
-            inst_id = insts[0].get("id")
-            if inst_id:
-                try:
-                    candidates_iter = (
-                        Authors()
-                        .filter(**{
-                            "last_known_institutions.id": inst_id,
-                            "display_name.search": name,
-                        })
-                        .select(["id", "display_name", "last_known_institutions", "works_count"])
-                        .paginate(per_page=25)
-                    )
-                    best_id, best_score, best_works = "", -1, -1
-                    for page in candidates_iter:
-                        for a in page:
-                            score = _best_inst_match_score(a.get("last_known_institutions", []), uni_norm)
-                            works = int(a.get("works_count") or 0)
-                            if score > best_score or (score == best_score and works > best_works):
-                                best_score, best_works = score, works
-                                best_id = (a.get("id") or "").split("/")[-1]
-                        if time.time() - t0 > 10.0:  # soft guard changed from 3 to 10
+        best_score, best_works = -1, -1
+
+        for page in candidates_iter:
+            for author in page:
+                # Check if any work lists the target university
+                works = author.get("works") or []
+                affiliated = False
+                for w in works:
+                    institutions = w.get("institutions") or []
+                    for inst in institutions:
+                        inst_name = inst.get("display_name") or ""
+                        if _best_inst_match_score(inst_name, uni_norm) >= fuzzy_threshold:
+                            affiliated = True
                             break
-                    if best_id and best_score >= fuzzy_threshold:
-                        return best_id
-                except Exception as e:
-                    print(f"[WARN] OpenAlex filter-by-inst failed for {name} @ {uni_norm}: {e}")
+                    if affiliated:
+                        break
 
-        # --- Fallback: search by name; fuzzy on institution names
-        try:
-            candidates_iter = (
-                Authors()
-                .search(name)
-                .select(["id", "display_name", "last_known_institutions", "works_count"])
-                .paginate(per_page=40)
-            )
-            best_id, best_score, best_works = "", -1, -1
-            for page in candidates_iter:
-                for a in page:
-                    score = _best_inst_match_score(a.get("last_known_institutions", []), uni_norm)
-                    works = int(a.get("works_count") or 0)
-                    if score > best_score or (score == best_score and works > best_works):
-                        best_score, best_works = score, works
-                        best_id = (a.get("id") or "").split("/")[-1]
-                if time.time() - t0 > 15.0: #changed from 5 to 5
-                    break
-            if best_id and best_score >= fuzzy_threshold:
-                return best_id
-        except Exception as e:
-            print(f"[WARN] OpenAlex name-search failed for {name} @ {uni_norm}: {e}")
+                if affiliated:
+                    score = int(author.get("works_count") or 0)
+                    if score > best_works:  # prioritize authors with more publications
+                        best_id = (author.get("id") or "").split("/")[-1]
+                        best_works = score
+
+            # Soft timeout to avoid long-running requests
+            if time.time() - t0 > 15.0:
+                break
+
+        if best_id:
+            return best_id
 
     except Exception as e:
-        print(f"[WARN] get_openalex_id_for_prof unexpected error: {e}")
+        print(f"[WARN] get_openalex_id_for_prof unexpected error for {name}: {e}")
 
-    print(f"Found open alex id for {name}: {best_id}")
-    if (best_id == ''):
-        best_id = "A5007769527" #Fall back for testing
+    print(f"Could not find OpenAlex ID for {name}")
+    return ''  # fallback if nothing is found
 
-    return best_id
+# @lru_cache(maxsize=1000)
+# def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:
+#     # Tuned fuzzy down to 70 from 80
+#     """
+#     Robust ID finder:
+#       1) Normalize university name (map acronyms/aliases).
+#       2) Try filtering Authors by institution ID AND name.
+#       3) Fallback: search by name only and fuzzy-match institutions.
+#     Returns '' if not found quickly.
+#     """
+#     best_id =''
+#     try:
+#         t0 = time.time()
+#         uni_norm = _normalize_uni(university)
+
+#         # --- Try to resolve institution ID first
+#         try:
+#             insts = list(
+#                 Institutions()
+#                 .search(uni_norm)
+#                 .select(["id", "display_name"])
+#                 .get()
+#             )
+#         except Exception:
+#             insts = []
+
+#         if insts:
+#             inst_id = insts[0].get("id")
+#             if inst_id:
+#                 try:
+#                     candidates_iter = (
+#                         Authors()
+#                         .filter(**{
+#                             "last_known_institutions.id": inst_id,
+#                             "display_name.search": name,
+#                         })
+#                         .select(["id", "display_name", "last_known_institutions", "works_count"])
+#                         .paginate(per_page=25)
+#                     )
+#                     best_id, best_score, best_works = "", -1, -1
+#                     for page in candidates_iter:
+#                         for a in page:
+#                             score = _best_inst_match_score(a.get("last_known_institutions", []), uni_norm)
+#                             works = int(a.get("works_count") or 0)
+#                             if score > best_score or (score == best_score and works > best_works):
+#                                 best_score, best_works = score, works
+#                                 best_id = (a.get("id") or "").split("/")[-1]
+#                         if time.time() - t0 > 10.0:  # soft guard changed from 3 to 10
+#                             break
+#                     if best_id and best_score >= fuzzy_threshold:
+#                         return best_id
+#                 except Exception as e:
+#                     print(f"[WARN] OpenAlex filter-by-inst failed for {name} @ {uni_norm}: {e}")
+
+#         # --- Fallback: search by name; fuzzy on institution names
+#         try:
+#             candidates_iter = (
+#                 Authors()
+#                 .search(name)
+#                 .select(["id", "display_name", "last_known_institutions", "works_count"])
+#                 .paginate(per_page=40)
+#             )
+#             best_id, best_score, best_works = "", -1, -1
+#             for page in candidates_iter:
+#                 for a in page:
+#                     score = _best_inst_match_score(a.get("last_known_institutions", []), uni_norm)
+#                     works = int(a.get("works_count") or 0)
+#                     if score > best_score or (score == best_score and works > best_works):
+#                         best_score, best_works = score, works
+#                         best_id = (a.get("id") or "").split("/")[-1]
+#                 if time.time() - t0 > 15.0: #changed from 5 to 5
+#                     break
+#             if best_id and best_score >= fuzzy_threshold:
+#                 return best_id
+#         except Exception as e:
+#             print(f"[WARN] OpenAlex name-search failed for {name} @ {uni_norm}: {e}")
+
+#     except Exception as e:
+#         print(f"[WARN] get_openalex_id_for_prof unexpected error: {e}")
+
+#     print(f"Found open alex id for {name}: {best_id}")
+#     if (best_id == ''):
+#         best_id = "A5007769527" #Fall back for testing
+
+#     return best_id
 
 def prettify_department(filename: str, uni_prefix: str) -> str:
     """
