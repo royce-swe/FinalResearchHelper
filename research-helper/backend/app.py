@@ -293,7 +293,9 @@ def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int
     except Exception as e:
         print(f"[WARN] get_openalex_id_for_prof unexpected error: {e}")
 
-    return ""
+    print(f"Found open alex id for {name}: {best_id}")
+
+    return None
 
 def prettify_department(filename: str, uni_prefix: str) -> str:
     """
