@@ -25,6 +25,7 @@ from threading import RLock
 import uuid, hashlib  # NEW for metrics
 import mysql.connector
 from mysql.connector import Error
+import random
 import jwt
 import datetime
 
@@ -217,64 +218,97 @@ def _best_inst_match_score(author_insts, target_uni) -> int:
             best = score
     return best
 
-# =========================================================
-# Helper: Normalize university name (you can expand aliases)
-# =========================================================
-def _normalize_uni(uni_name: str) -> str:
-    return (uni_name or "").lower().strip()
-
 
 # =========================================================
-# Main function
+# Configuration
 # =========================================================
+OPENALEX_MAILTO = "jalenmathis7@gmail.com"  # polite pool
+OPENALEX_BASE = "https://api.openalex.org"
+
+HEADERS = {
+    "User-Agent": f"ResearchHelper/1.0 (mailto:{OPENALEX_MAILTO})"
+}
+
+# =========================================================
+# Helper Function
+# =========================================================
+def _normalize_name(name: str) -> str:
+    # Optional: normalize whitespace, remove accents, etc.
+    return " ".join(name.split())
+
+def _normalize_uni(uni: str) -> str:
+    # Optional: normalize university names, lowercase, remove punctuation
+    return uni.lower().strip()
+
+def _fuzzy_match_institution(hint: str, uni_norm: str, threshold: int = 70) -> bool:
+    if not hint:
+        return False
+    score = fuzz.ratio(hint.lower(), uni_norm)
+    return score >= threshold
+
+# =========================================================
+# Main Function
+# =========================================================
+MAX_RETRIES = 5
+INITIAL_BACKOFF = 1.0  # seconds
+BACKOFF_MULTIPLIER = 1.5
+
 @lru_cache(maxsize=1000)
-def get_openalex_id_for_prof(name: str, university: str = None, *, fuzzy_threshold: int = 70) -> str:
+def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:
     """
-    Find an OpenAlex author ID using the autocomplete endpoint.
-    
-    - name: full professor name (e.g., "Ronald Swanstrom")
-    - university: optional; will fuzzy-match against the 'hint' field
-    - Returns the OpenAlex short_id (e.g., "authors/A5007433649") or '' if not found.
+    Search for a professor in OpenAlex using autocomplete API with rate-limit handling.
+    Returns OpenAlex author ID (short_id) or fallback if not found.
     """
-    try:
-        url = f"https://api.openalex.org/autocomplete/authors?q={requests.utils.quote(name)}"
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+    base_url = "https://api.openalex.org/autocomplete/authors"
+    query = requests.utils.quote(name)
+    url = f"{base_url}?q={query}"
 
-        if not data.get("results"):
-            print(f"No results for {name}")
-            return ""
+    retry_delay = INITIAL_BACKOFF
 
-        best_id = ""
-        best_score = -1
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 429:
+                # Rate limit hit
+                print(f"[WARN] 429 hit for {name}, retrying in {retry_delay:.1f}s")
+                time.sleep(retry_delay)
+                retry_delay *= BACKOFF_MULTIPLIER
+                continue
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("results", [])
 
-        for author in data["results"]:
-            # If no university is specified, just take the first result
-            if university:
-                hint = author.get("hint") or ""
-                score = fuzz.partial_ratio(hint.lower(), university.lower())
-            else:
-                score = 100  # no uni specified, treat all as perfect match
+            # Find best match by fuzzy name + university
+            best_id, best_score = "", -1
+            for author in results:
+                author_name = author.get("display_name", "")
+                hint = author.get("hint", "")
+                works_count = author.get("works_count", 0)
 
-            if score > best_score:
-                best_score = score
-                best_id = author.get("short_id") or ""
+                # Use fuzzy match on university if hint exists
+                score = 0
+                if hint:
+                    score = fuzz.token_set_ratio(university.lower(), hint.lower())
 
-        if best_score >= fuzzy_threshold:
-            return best_id
-        else:
-            print(f"No match above threshold for {name} (best score {best_score})")
-            return ""
+                # Prioritize higher score + works count
+                if score > best_score or (score == best_score and works_count > 0):
+                    best_score = score
+                    best_id = author.get("short_id", "")
 
-    except requests.HTTPError as e:
-        print(f"[WARN] HTTP error for {name}: {e}")
-    except requests.RequestException as e:
-        print(f"[WARN] Request failed for {name}: {e}")
-    except Exception as e:
-        print(f"[WARN] Unexpected error for {name}: {e}")
+            if best_id:
+                return best_id
 
-    return ""
+            print(f"[WARN] No good OpenAlex match for {name}")
+            return ""  # not found
+
+        except requests.exceptions.RequestException as e:
+            print(f"[WARN] Attempt {attempt+1} failed for {name}: {e}")
+            time.sleep(retry_delay)
+            retry_delay *= BACKOFF_MULTIPLIER
+
+    print(f"[WARN] Could not retrieve authors for {name} after {MAX_RETRIES} retries")
+    return best_id  # fallback
+
 
 # @lru_cache(maxsize=1000)
 # def get_openalex_id_for_prof(name: str, university: str, *, fuzzy_threshold: int = 70) -> str:
@@ -613,51 +647,50 @@ def scrape_page(url, depth=0, visited=None, prefer_domain: str | None = None):
 # ---------------- NEW ENDPOINT: fetch recent papers ----------------
 def fetch_recent_papers(author_id, max_papers=5):
     """
-    Return up to `max_papers` most recent works for an OpenAlex author.
-    Accepts either short IDs (e.g., 'A123456789') or full URLs and normalizes to the URL form.
+    Fetch up to max_papers recent works for an OpenAlex author.
+    Handles 429 rate-limits with exponential backoff.
+    Accepts either short IDs (A123...) or full URLs.
     """
     papers = []
-    try:
-        # Normalize to full OpenAlex URL (Works filter expects this)
-        full_id = str(author_id)
-        if not full_id.startswith("http"):
-            full_id = f"https://openalex.org/{full_id}"
 
-        works_iter = (
-            Works()
-            .filter(**{"authorships.author.id": full_id})
-            .sort(publication_year="desc")
-            .select([
-                "title",
-                "publication_year",
-                "primary_location",
-                "cited_by_count",
-                "abstract_inverted_index",
-            ])
-            .paginate(per_page=20)
-        )
+    # Normalize to short ID if full URL is passed
+    if author_id.startswith("https://openalex.org/authors/"):
+        short_id = author_id.split("/")[-1]
+    else:
+        short_id = author_id
 
-        for page in works_iter:
-            for work in page or []:
-                if len(papers) >= max_papers:
-                    return papers
+    base_url = "https://api.openalex.org/works"
+    url = (
+        f"{base_url}?filter=authorships.author.id:{short_id}"
+        f"&sort=publication_year:desc"
+        f"&select=title,publication_year,primary_location,cited_by_count,abstract_inverted_index"
+        f"&per-page=20"
+    )
 
+    retry_delay = INITIAL_BACKOFF
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 429:
+                print(f"[WARN] 429 hit for {short_id}, retrying in {retry_delay:.1f}s")
+                time.sleep(retry_delay)
+                retry_delay *= BACKOFF_MULTIPLIER
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+
+            for work in results[:max_papers]:
                 title = work.get("title") or "Untitled"
                 year = work.get("publication_year") or "N/A"
-
-                src = ((work.get("primary_location") or {}).get("source") or {})
-                journal = src.get("display_name") or "Unknown Journal"
-
+                journal = ((work.get("primary_location") or {}).get("source") or {}).get("display_name") or "Unknown Journal"
                 citations = work.get("cited_by_count") or 0
 
                 # Rebuild abstract from inverted index if present
                 abstract_data = work.get("abstract_inverted_index") or {}
                 if isinstance(abstract_data, dict) and abstract_data:
-                    # words sorted by first position
-                    words_sorted = sorted(
-                        abstract_data.items(),
-                        key=lambda kv: kv[1][0] if kv[1] else 0
-                    )
+                    words_sorted = sorted(abstract_data.items(), key=lambda kv: kv[1][0] if kv[1] else 0)
                     abstract = " ".join(word for word, _ in words_sorted)
                 else:
                     abstract = "No abstract available."
@@ -670,22 +703,53 @@ def fetch_recent_papers(author_id, max_papers=5):
                     "abstract": abstract,
                 })
 
-            # polite pacing
-            time.sleep(0.2)
+            return papers
 
-    except Exception as e:
-        print(f"[WARN] Error fetching papers for {author_id}: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"[WARN] Attempt {attempt+1} failed for {short_id}: {e}")
+            time.sleep(retry_delay)
+            retry_delay *= BACKOFF_MULTIPLIER
 
+    print(f"[WARN] Could not fetch papers for {short_id} after {MAX_RETRIES} retries")
     return papers
 
+
 # ---------------- NEW ENDPOINT: get professor details by ID ----------------
+MAX_RETRIES = 5
+INITIAL_BACKOFF = 1.0
+BACKOFF_MULTIPLIER = 1.5
+
+def get_author_with_retry(oa_id, max_retries=MAX_RETRIES, backoff=INITIAL_BACKOFF):
+    """
+    Fetch an OpenAlex author with retry/backoff for 429s.
+    Accepts short ID or full URL.
+    """
+    if not str(oa_id).startswith("http"):
+        oa_id = f"https://openalex.org/{oa_id}"
+
+    delay = backoff
+    for attempt in range(max_retries):
+        try:
+            author = Authors()[oa_id]
+            return author
+        except Exception as e:
+            if "429" in str(e) or "too many 429" in str(e):
+                print(f"[WARN] 429 hit for {oa_id}, retrying in {delay:.1f}s")
+                time.sleep(delay + random.random() * 0.5)
+                delay *= BACKOFF_MULTIPLIER
+                continue
+            else:
+                print(f"[WARN] Failed to fetch {oa_id}: {e}")
+                break
+    print(f"[WARN] Could not fetch author {oa_id} after {max_retries} retries")
+    return None
+
+
 @app.route("/professors/<prof_id>", methods=["GET"])
 def get_professor_details(prof_id):
     try:
-        # Normalize OpenAlex IDs to the short form first
-        if prof_id.startswith("http"):
-            prof_id = prof_id.split("/")[-1]
-        elif prof_id.startswith("openalex.org"):
+        # Normalize OpenAlex IDs to the short form
+        if prof_id.startswith("http") or prof_id.startswith("openalex.org"):
             prof_id = prof_id.split("/")[-1]
 
         # Handle CSV-based IDs: csv::<uni>::<dept>::<slug-name>
@@ -705,7 +769,6 @@ def get_professor_details(prof_id):
             if not name_col:
                 return jsonify({"error": "Professor not found"}), 404
 
-            # find row by slugified name
             match_row = None
             for _, r in df.iterrows():
                 candidate = str(r.get(name_col, "")).strip()
@@ -720,51 +783,38 @@ def get_professor_details(prof_id):
             raw_email = str(match_row.get(email_col, "")).strip() if email_col else ""
             csv_research = str(match_row.get(research_col, "")).strip() if research_col else ""
 
-            # email (validate + fallback)
             email = is_valid_email_text(raw_email) or "Not Available"
 
-            # Enrich from OpenAlex if we can resolve an ID
-            oa_id = get_openalex_id_for_prof(name, uni)  # cached helper
-            time.sleep(0.20)
-            research_areas = []
-            recent_papers = []
-            if oa_id:
-                try:
-                    full_oa_id = oa_id if str(oa_id).startswith("http") else f"https://openalex.org/{oa_id}"
-                    author = Authors()[full_oa_id]  # use full URL form for maximum compatibility
-                    if author:
-                        xconcepts = author.get("x_concepts") or []
-                        research_areas = [c.get("display_name") for c in xconcepts if c.get("display_name")]
-                        recent_papers = fetch_recent_papers(full_oa_id)  # safe to pass URL form
-                    if not research_areas:
-                        print(f"[INFO] No x_concepts for {name} ({uni}) — id={oa_id}")
-                    if not recent_papers:
-                        print(f"[INFO] No recent works for {name} ({uni}) — id={oa_id}")
-                except Exception as e:
-                    print(f"[WARN] OpenAlex enrich failed for {name} ({uni}) id={oa_id}: {e}")
-            else:
-                print(f"[INFO] No OpenAlex ID for '{name}' @ '{uni}' (normalized='{_normalize_uni(uni)}')")
+            # Enrich from OpenAlex with retry/backoff
+            oa_id = get_openalex_id_for_prof(name, uni)
+            research_areas, recent_papers = [], []
 
-            # fallback to CSV research text if no OpenAlex topics
+            if oa_id:
+                author = get_author_with_retry(oa_id)
+                if author:
+                    xconcepts = author.get("x_concepts") or []
+                    research_areas = [c.get("display_name") for c in xconcepts if c.get("display_name")]
+                    recent_papers = fetch_recent_papers(oa_id)  # already has retry/backoff
+            # fallback to CSV research text
             if not research_areas and csv_research:
                 research_areas = [s.strip() for s in re.split(r"[;,]", csv_research) if s.strip()]
 
             professor_info = {
-                "id": prof_id,  # keep csv::... so the page can refresh reliably
+                "id": prof_id,
                 "name": name,
-                "email": email if email else "Not Available",
+                "email": email,
                 "university": uni,
                 "department": dept_slug,
                 "title": title,
-                "researchAreas": research_areas,     # populated if possible
+                "researchAreas": research_areas,
                 "biography": f"{name} is a faculty member at {uni}.",
-                "recentPapers": recent_papers        # populated if possible
+                "recentPapers": recent_papers
             }
             return jsonify(professor_info), 200
 
         # ---------- Pure OpenAlex ID path ----------
-        full_oa_id = prof_id if str(prof_id).startswith("http") else f"https://openalex.org/{prof_id}"
-        author = Authors()[full_oa_id]
+        full_oa_id = f"https://openalex.org/{prof_id}"
+        author = get_author_with_retry(full_oa_id)
         if not author:
             return jsonify({"error": "Professor not found"}), 404
 
@@ -772,21 +822,16 @@ def get_professor_details(prof_id):
         institutions = author.get("last_known_institutions", [])
         university = institutions[0]["display_name"] if institutions else "Unknown Institution"
         works_count = author.get("works_count", 0)
-        topics = [concept.get("display_name") for concept in (author.get("x_concepts") or []) if concept.get("display_name")]
+        topics = [c.get("display_name") for c in (author.get("x_concepts") or []) if c.get("display_name")]
 
-        recent_papers = fetch_recent_papers(full_oa_id)  # pass URL form
-
-        if not topics:
-            print(f"[INFO] No x_concepts for OpenAlex id={prof_id}")
-        if not recent_papers:
-            print(f"[INFO] No recent works for OpenAlex id={prof_id}")
+        recent_papers = fetch_recent_papers(full_oa_id)  # safe retry logic included
 
         professor_info = {
             "id": prof_id,
             "name": name,
             "email": "Not Available",
             "university": university,
-            "department": "Unknown Department",
+            "department": "Professor",
             "researchAreas": topics,
             "biography": f"{name} is a professor at {university} with {works_count} publications.",
             "recentPapers": recent_papers
@@ -796,6 +841,7 @@ def get_professor_details(prof_id):
     except Exception as e:
         print(f"Error fetching professor details: {e}")
         return jsonify({"error": "Failed to fetch professor details"}), 500
+
 
 # --- NEW IMPROVED MATCH FUNCTION ---
 GENERIC_WORDS = {
@@ -1048,8 +1094,18 @@ def search_professors():
 
             # Step 3: Try to get OpenAlex ID
             oa_id = get_openalex_id_for_prof(name, school)
-            if oa_id and not oa_id.startswith("http"):
-                oa_id = f"https://openalex.org/{oa_id}"
+            # If we got a full URL, extract the short ID
+            # Normalize to short ID
+            if oa_id.startswith("https://openalex.org/authors/"):
+                short_id = oa_id.split("/")[-1]  # "A5086173064"
+            elif oa_id.startswith("authors/"):
+                short_id = oa_id.split("/")[-1]  # remove the "authors/" prefix
+            else:
+                short_id = oa_id  # already short ID
+            
+            oa_id = short_id
+            # if oa_id and not oa_id.startswith("http"):
+            #     oa_id = f"https://openalex.org/{oa_id}"
 
             # Step 4: Generate stable fallback ID if OpenAlex fails
             prof_id = oa_id or f"{name.lower().replace(' ', '-')}-{school.lower().replace(' ', '-')}"
