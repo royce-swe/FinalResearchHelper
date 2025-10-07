@@ -21,6 +21,7 @@ const UserDashboard: React.FC = () => {
   const { user } = useContext(AuthContext);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editedStatuses, setEditedStatuses] = useState<{ [id: string]: Connection['status'] }>({});
   const [stats, setStats] = useState({
     total: 0,
     pending: 0,
@@ -63,7 +64,49 @@ const UserDashboard: React.FC = () => {
     setStats(stats);
   };
 
+  const saveAllStatuses = async () => {
+    const token = localStorage.getItem('research_helper_token');
+  
+    try {
+      await Promise.all(
+        Object.entries(editedStatuses).map(([id, status]) =>
+          fetch(`${API_BASE}/user/connections/${id}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status }),
+          })
+        )
+      );
+  
+      // Update local state
+      setConnections(prev =>
+        prev.map(conn =>
+          editedStatuses[conn.id] ? { ...conn, status: editedStatuses[conn.id] } : conn
+        )
+      );
+  
+      // Clear edits
+      setEditedStatuses({});
+      calculateStats(connections.map(conn =>
+        editedStatuses[conn.id] ? { ...conn, status: editedStatuses[conn.id] } : conn
+      ));
+    } catch (error) {
+      console.error('Failed to save statuses:', error);
+    }
+  };  
+  
+
   const updateConnectionStatus = async (connectionId: string, status: Connection['status']) => {
+    // Optimistically update state
+    const updatedConnections = connections.map(conn =>
+      conn.id === connectionId ? { ...conn, status } : conn
+    );
+    setConnections(updatedConnections);
+    calculateStats(updatedConnections);
+  
     try {
       const token = localStorage.getItem('research_helper_token');
       const response = await fetch(`${API_BASE}/user/connections/${connectionId}`, {
@@ -74,21 +117,17 @@ const UserDashboard: React.FC = () => {
         },
         body: JSON.stringify({ status }),
       });
-
-      if (response.ok) {
-        setConnections(prev => 
-          prev.map(conn => 
-            conn.id === connectionId ? { ...conn, status } : conn
-          )
-        );
-        calculateStats(connections.map(conn => 
-          conn.id === connectionId ? { ...conn, status } : conn
-        ));
+  
+      if (!response.ok) {
+        throw new Error('Failed to update status on server');
       }
     } catch (error) {
-      console.error('Failed to update connection:', error);
+      console.error(error);
+      // If API fails, revert back
+      fetchConnections();
     }
   };
+  
 
   const deleteConnection = async (connectionId: string) => {
     if (!confirm('Are you sure you want to delete this connection?')) return;
@@ -215,16 +254,29 @@ const UserDashboard: React.FC = () => {
 
         {/* Connections List */}
         <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex justify-between items-center">
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
               <h2 className="text-lg font-medium text-gray-900">Your Connections</h2>
-              <a
-                href="/finder"
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Find More Professors
-              </a>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={saveAllStatuses}
+                  className={`px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm ${
+                    Object.keys(editedStatuses).length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  disabled={Object.keys(editedStatuses).length === 0}
+                >
+                  Save All
+                </button>
+
+                <a
+                  href="/finder"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Find More Professors
+                </a>
+              </div>
             </div>
           </div>
 
@@ -288,15 +340,17 @@ const UserDashboard: React.FC = () => {
                         {connection.field}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <select
-                          value={connection.status}
-                          onChange={(e) => updateConnectionStatus(connection.id, e.target.value as Connection['status'])}
-                          className={`text-xs font-medium px-2.5 py-0.5 rounded-full border-0 ${getStatusColor(connection.status)}`}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="responded">Responded</option>
-                          <option value="no_response">No Response</option>
-                        </select>
+                      <select
+                        value={editedStatuses[connection.id] ?? connection.status}
+                        onChange={(e) =>
+                          setEditedStatuses(prev => ({ ...prev, [connection.id]: e.target.value as Connection['status'] }))
+                        }
+                        className={`text-xs font-medium px-2.5 py-0.5 rounded-full border-0 ${getStatusColor(editedStatuses[connection.id] ?? connection.status)}`}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="responded">Responded</option>
+                        <option value="no_response">No Response</option>
+                      </select>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(connection.dateContacted).toLocaleDateString()}

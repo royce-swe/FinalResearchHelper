@@ -50,44 +50,66 @@ const ProfessorDetailPage: React.FC = () => {
   const searchParams = new URLSearchParams(location.search);
   const emailFromQuery = searchParams.get("email") || "";
 
-useEffect(() => {
-  if (!professorId) {
-    setIsLoading(false);
-    return;
-  }
-
-  const controller = new AbortController();
-  const fetchProfessorDetails = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`${API_BASE}/professors/${encodeURIComponent(professorId)}`, {
-        signal: controller.signal,
-      });
-
-      if (!response.ok) throw new Error("Failed to fetch professor details");
-
-      const data = await response.json();
-      data.researchAreas = Array.isArray(data.researchAreas) ? data.researchAreas : [];
-      data.recentPapers = Array.isArray(data.recentPapers) ? data.recentPapers : [];
-
-      // Merge email from query param if provided
-      if (emailFromQuery) data.email = emailFromQuery;
-
-      setProfessor(data);
-    } catch (error) {
-      if ((error as any)?.name !== "AbortError") {
-        console.error(error);
-        setProfessor(null);
-      }
-    } finally {
+  useEffect(() => {
+    if (!professorId) {
       setIsLoading(false);
+      return;
     }
-  };
-
-  fetchProfessorDetails();
-  return () => controller.abort();
-}, [professorId, emailFromQuery]);
-
+  
+    const controller = new AbortController();
+    let retries = 0;
+    const MAX_RETRIES = 5;
+  
+    const fetchProfessorDetails = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/professors/${encodeURIComponent(professorId)}`, {
+          signal: controller.signal,
+        });
+  
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Proper "not found" response from server
+            setProfessor(null);
+            setIsLoading(false);
+          } else if (response.status === 429 && retries < MAX_RETRIES) {
+            // temporary rate limit
+            retries++;
+            console.warn(`429 rate limit hit, retrying (${retries}/${MAX_RETRIES})...`);
+            setTimeout(fetchProfessorDetails, 1000 * retries); // exponential-ish backoff
+          } else {
+            console.error("Failed to fetch professor details:", response.status);
+            setProfessor(null);
+            setIsLoading(false);
+          }
+          return;
+        }
+  
+        const data = await response.json();
+        data.researchAreas = Array.isArray(data.researchAreas) ? data.researchAreas : [];
+        data.recentPapers = Array.isArray(data.recentPapers) ? data.recentPapers : [];
+        if (emailFromQuery) data.email = emailFromQuery;
+        setProfessor(data);
+        setIsLoading(false);
+  
+      } catch (error) {
+        if ((error as any).name !== "AbortError") {
+          console.error("Network error fetching professor:", error);
+          if (retries < MAX_RETRIES) {
+            retries++;
+            setTimeout(fetchProfessorDetails, 1000 * retries);
+          } else {
+            setProfessor(null);
+            setIsLoading(false);
+          }
+        }
+      }
+    };
+  
+    fetchProfessorDetails();
+    return () => controller.abort();
+  }, [professorId, emailFromQuery]);  
+  
   const generateEmail = async () => {
     if (!professor) return;
 
