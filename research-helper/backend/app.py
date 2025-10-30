@@ -47,7 +47,7 @@ CORS(
 # AI -----------------------
 # USE THE API key on ur local environment to run the email generator
 # run this in the terminal
-# export OPENAI_API_KEY="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"
+# export OPENAI_API_KEY="put code here"
 
 
 client = OpenAI()

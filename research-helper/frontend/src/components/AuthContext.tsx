@@ -30,7 +30,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// Use your existing API base
 //const API_BASE = "https://finalresearchhelper-production.up.railway.app";
 //const API_BASE = "http://localhost:5050";
 

@@ -6,7 +6,7 @@ import { TeamMember } from '../types';
 import rishabImage from '../assets/images/rishab-suresh.jpg';
 import royceImage from '../assets/images/royce-mathis.jpg';
 import samkitImage from '../assets/images/samkit-bothra.jpg';
-import aidanImage from '../assets/images/aidan-don.jpg'; // You'll need to add this image
+import aidanImage from '../assets/images/aidan-don.jpg';
 
 //const API_BASE = 'https://finalresearchhelper-production.up.railway.app';
 //const API_BASE = "http://localhost:5050";
@@ -15,28 +15,28 @@ const teamMembers: TeamMember[] = [
   {
     name: 'Rishab Suresh',
     role: 'Co-Founder',
-    bio: 'Rising senior in the IB Program at Seminole High School located in Central Florida',
+    bio: 'Senior in the IB Program at Seminole High School located in Central Florida',
     image: rishabImage,
     linkedin: 'https://www.linkedin.com/in/rishab-suresh22/'
   },
   {
     name: 'Royce Mathis',
     role: 'Co-Founder',
-    bio: 'Rising senior in the IB Program at Seminole High School located in Central Florida',
+    bio: 'Senior in the IB Program at Seminole High School located in Central Florida',
     image: royceImage,
     linkedin: 'https://www.linkedin.com/in/roycejmathis/'
   },
   {
     name: 'Samkit Bothra',
     role: 'Co-Founder',
-    bio: 'Rising senior dual enrolled at FAU located in South Florida',
+    bio: 'Senior dual enrolled at FAU located in South Florida',
     image: samkitImage,
     linkedin: 'https://www.linkedin.com/in/samkit-bothra/'
   },
   {
     name: 'Aidan Don',
     role: 'Social Media Manager & Design Lead',
-    bio: 'Rising senior at Cooper City High School located in South Florida',
+    bio: 'Senior at Cooper City High School located in South Florida',
     image: aidanImage,
     linkedin: 'https://www.linkedin.com/in/aidankdon/'
   }
