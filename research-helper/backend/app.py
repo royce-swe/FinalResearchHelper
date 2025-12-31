@@ -1012,7 +1012,7 @@ def get_metrics():
     # Total students connected
     cursor.execute("SELECT COUNT(*) AS total_students FROM users2")
     total_students = cursor.fetchone()["total_students"]
-    total_students += 10
+    total_students += 50
 
     # Faculty contacts
     cursor.execute("SELECT COUNT(*) AS total_faculty FROM user_connections")
