@@ -40,7 +40,7 @@ app.config["SECRET_KEY"] = "wetsocks4life"
 
 CORS(
     app,
-    origins=["http://localhost:5173", "https://researchconnectai.com", "https://www.researchconnectai.com"],
+    origins=["http://localhost:5173", "https://researchconnectai.com", "https://www.researchconnectai.com", "https://final-research-helper.vercel.app/", "https://www.final-research-helper.vercel.app/"],
     supports_credentials=True
 )
 
